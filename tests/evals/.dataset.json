@@ -1,0 +1,182 @@
+{
+  "_meta": {
+    "chatbot_role_default": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+    "tier": {
+      "light": "Pure text deliverable, no artifact generation, ~5-10 min per case.",
+      "heavy": "Long-running agentic task with file/artifact deliverable (PPT, Excel, PDF, image, multi-source sourcing), can take 15-45 min per case."
+    }
+  },
+  "goldens": [
+    {
+      "_tier": "light",
+      "scenario": "招聘需求 - 美国东海岸物流机器人销售人才搜寻。用户希望拿到具体候选人画像和初步人选清单。",
+      "expected_outcome": "Mira 给出针对该职位的搜索策略（目标公司、地点圈、关键词），并产出至少 3-5 个匹配的候选人画像或具名人选（含背景概述），不编造未经验证的具体公司或个人。如果信息无法验证应明确说明数据局限。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "客户想在美国找一个物流机器人销售，东海岸沿线城市均可。请给出搜索策略和初步候选人画像/名单。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "scenario": "AI 应用行业人才供给与技能趋势调研。用户期望看到带数据支撑的调研结论。",
+      "expected_outcome": "Mira 提供 AI 应用行业当前人才供给端的判断（规模/地域分布/经验结构）和技能需求的发展趋势（如 LLM、RAG、Agent、多模态、MLOps 等），并尽量引用可追溯来源或注明数据局限。结构清晰、有结论。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "请帮我做一个 AI 应用行业的人才供给情况调研，并分析未来 1-2 年内的技能需求发展趋势。要点 + 数据支撑 + 结论。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "广深消费电子行业在招岗位 Top10 公司清单 + 招聘合作机会分析，以 PPT 形式交付，排除头部大厂。",
+      "expected_outcome": "Mira 列出广州+深圳消费电子领域在招岗位最多的 10 家公司（排除华为、小米、小鹏、比亚迪等头部），每家给出当前在招岗位概况、合作机会判断和切入策略，并生成或给出 PPT 文件链接。如果无法访问实时招聘数据应明确说明并给出可执行的替代信息源。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "帮我看一下广州和深圳两地消费电子行业企业在招岗位数量最多的 10 家公司，并给出招聘合作机会分析和切入策略，用 PPT 展示；排除华为、小米、小鹏、比亚迪等类似大厂。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "基于一份简历做优劣势分析 + LinkedIn 找 5 个匹配职位 + Excel 对比表（含公司官网/职位链接/发布人 LinkedIn 链接）。注意：本评测无真实简历文件，使用文本简介代替。",
+      "expected_outcome": "Mira 基于用户提供的简历摘要给出优劣势分析；在 LinkedIn（或等价职业平台）上检索并列出 5 个匹配职位，附公司官网、职位链接、发布人 LinkedIn 链接；以 Excel 表格展示对比维度。若实际无法访问 LinkedIn 应说明并给出替代检索路径。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "帮我分析下面这份简历的优劣势，并在 LinkedIn 上找到 5 个适合该人选的职位，总结合适的职位和发布公司的详细介绍，用 Excel 表格做职位对比，同时加上公司官网、职位链接和发布人 LinkedIn 链接。\n\n简历摘要：\n- 姓名：候选人 A\n- 教育：复旦大学计算机本科，CMU 计算机硕士\n- 工作经历：字节跳动数据科学家 3 年，主导推荐算法 A/B 实验平台；现就职于某独角兽 AI 公司，担任 LLM 应用产品经理 2 年，负责企业知识库 RAG 产品 0->1，年 ARR 增长到 800 万美金。\n- 期望方向：硅谷或新加坡的 AI 应用 PM/创始团队岗位"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "基于一份 JD 生成可发朋友圈和 LinkedIn 的招聘海报图片 + 配套文案。注意：本评测以文本 JD 替代上传文件。",
+      "expected_outcome": "Mira 基于 JD 文本生成（或返回链接到）一张适合朋友圈/LinkedIn 的招聘海报图片，并给出一段简短、有吸引力的配套文案（中英任一或双语均可）。海报应突出岗位核心卖点，文案不超过约 150 字。若无法生成图片应说明并提供文案 + 视觉建议。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "帮我根据下面这份 JD 做一张可以发在朋友圈和 LinkedIn 上、能吸引候选人应聘的招聘图片，再加一小段配套文案。\n\nJD：\n职位：Senior LLM Applied Scientist\n公司：某硅谷 AI 独角兽（C 轮，估值 30 亿美金）\n地点：San Francisco / Remote (US)\n年薪：基本 $260K-$320K + 股票 + 签字费\n要求：博士或硕士（CS/ML），3+ 年 LLM 微调/post-training/RLHF 实战经验，发表过 NeurIPS/ICML/ACL 一作论文优先；熟悉 vLLM、DeepSpeed、SGLang。\n亮点：与世界 Top 实验室合作，自有 5000+ H100 算力。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "scenario": "美国硅谷 AI 产品经理薪酬调研。",
+      "expected_outcome": "Mira 给出硅谷 AI PM 的薪酬区间（base + 股票 + 奖金），按级别（如 IC4/Senior/Staff/Group PM）和公司类型（FAANG、独角兽、早期初创）分别说明，附数据来源或明确数据局限。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "调研一下美国硅谷 AI 产品经理的薪酬情况，按级别和公司类型给出薪酬区间。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "出海跨境电商东南亚/欧洲市场拓展：跨多家目标公司构建运营+管理岗的候选人画像 + JD + 候选人寻访，优先 0->1 经验。",
+      "expected_outcome": "Mira 针对 SHEIN、Capelle、Temu、安克创新、阿里国际站、Shopee、TikTok 这 7 家目标公司，构建 0->1 经验背景的运营与管理岗人才画像，撰写示例 JD，并尝试给出每家目标公司的候选人或候选人画像清单（如无法访问个人数据应明确说明并给出搜索路径）。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "客户要开拓东南亚和欧洲市场，想从希音、Capelle、Temu、安克创新、阿里国际站、Shopee、TikTok 找运营和管理人选。请：1）构建合适的人才画像；2）撰写 JD；3）从这几家目标公司中寻访候选人，优先 0->1 经验。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "海尔医疗日本分公司 CEO 招聘的分析报告 + 5 位候选人推荐。要求是日本人。",
+      "expected_outcome": "Mira 输出一份结构化分析报告：1）目前海尔医疗在日本的业务情况；2）该 CEO 职位的重心和潜在要求；3）业务情况对人选要求的影响；4）推荐 5 位可能合适的日本人候选人（含背景、为何合适、潜在风险）。无法验证的信息要标注。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "海尔医疗板块日本分公司要在日本找一个 CEO，要求是日本人。请帮我：1）分析目前海尔医疗在日本的业务情况；2）这个 CEO 职位的重心和可能的要求；3）业务情况对人选招聘有哪些潜在要求；4）写一个分析报告；5）附上 5 位可能合适沟通的人选。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "scenario": "国内高科技公司海外 AI 人才引进计划设计（QS20 硕博 + 中国籍）。",
+      "expected_outcome": "Mira 制定一个完整的海外人才引进计划：目标人群定义（QS20 硕博/本科 985 或 QS20、AI/CS/数学、海外大厂经验、中国籍）、搜寻渠道与策略、外联/触达话术框架、面试与决策流程、Offer 包与回国 relocation 设计、风险与时间表。结构清晰、可执行。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "国内一家高科技公司想做海外人才引进，希望引入 QS20 院校硕博，本科 985 或 QS20，专业为人工智能、计算机或数学相关，有海外工作经验、特别是在头部 AI 公司工作经历者优先，要求中国籍。请帮我制定一份完整的人才引进计划。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "scenario": "对海辰储能（Hithium）的 BD 切入策略 + 职位交付准备 + 可视化图表，以 PDF 形式交付。",
+      "expected_outcome": "Mira 输出一份 PDF 报告：1）海辰储能公司及业务现状概览；2）可能的 BD 切入点（如海外团队、储能技术、市场扩张）；3）相应的 BD 策略；4）在职位交付上猎头需要准备什么（人才地图、候选人池等）；5）至少 1-2 张可视化图表（如组织/市场/职位分布图）。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "我想和海辰储能这家公司深度合作国内及海外职位的交付。请帮我：1）分析可能的 BD 切入点和相应 BD 策略；2）说明我在职位交付上需要做些什么；3）做成 PDF 报告，最好包含可视化图表方便我直观分析。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "crm",
+      "scenario": "CRM 场景 1：查询上海地区人工智能行业企业的在招职位并总结市场招聘需求，给出猎企合作概率判断。",
+      "expected_outcome": "Mira 通过 CRM 工具/MCP（或显式说明无法访问 CRM 时给出可执行替代方案）拉取上海 AI 行业企业及其在招职位，输出：1）招聘需求摘要（热门岗位、JD 关键词、薪资带）；2）每家公司按在招体量 + 紧急度 + 历史合作信号打出的「猎企合作概率」分级（高/中/低 + 简短依据）。不可凭空捏造具体企业的 HC 数。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "查询上海地区人工智能行业的企业，根据他们的在招职位总结市场招聘需求，识别企业的猎企合作概率。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "crm",
+      "scenario": "CRM 场景 2：搜索江浙沪企业融资信息，分析当前资本青睐的行业方向。",
+      "expected_outcome": "Mira 调 CRM/搜索工具汇总江苏、浙江、上海近期（建议最近 6-12 个月）的企业融资事件，按行业聚合金额/笔数，输出 Top 3-5 受资本青睐的行业并附简短证据（代表性融资案例、轮次、领投方）。无法实时拉取时应明确说明数据来源与时效局限。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "搜索江浙沪企业融资信息，分析出目前什么行业比较受资本青睐。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "voice",
+      "scenario": "Voice 场景 1：定时单人外呼意向初筛，推荐美团运营实习生岗位（上海）。",
+      "expected_outcome": "Mira 通过外呼工具/MCP（或显式说明）创建一个定时外呼任务：被叫为周正雨 13732649235，时间为「明天上午 11:00」，话术场景选「默认（意向初筛）」，推荐岗位为美团·运营实习生·上海。回执应包含：候选人、电话、执行时间、场景、目标岗位及地点；时间应解析为绝对时间（基于今天 2026-05-11 → 明天 2026-05-12 11:00）。不可静默成功——必须给出可核对的任务摘要或任务 ID。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "明天上午11点给周正雨13732649235打电话进行意向初筛，过程中选择默认场景，推荐美团的运营实习生岗位，地点在上海。"
+      ]
+    },
+    {
+      "_tier": "heavy",
+      "_category": "voice",
+      "_attachments": ["/Users/stephen/Desktop/外呼名单导入模板.xlsx"],
+      "scenario": "Voice 场景 2：根据上传的外呼名单 Excel 批量外呼，本周额度用尽后将剩余排到下周；本周排在「下周一 11:00」执行，剩余排在「下周三 10:00」执行。统一推荐美团运营实习生（上海），默认场景。",
+      "expected_outcome": "Mira 读取附件（外呼名单导入模板.xlsx）解析候选人，按当日外呼额度切分两批：本批安排 2026-05-18（下周一）11:00 执行，剩余安排 2026-05-20（下周三）10:00 执行；话术场景=默认，推荐岗位=美团·运营实习生·上海。回执应给出：解析到的候选人数量、两批的执行时间与人数、目标岗位信息。如无法解析附件应明确说明并请求确认列定义，不得静默忽略附件。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "帮我给这些同学打电话确认意向，如果这周额度不够打不完的话，就安排到下周继续。本周的安排在下周1上午11点执行，剩余的安排在下周三上午十点执行。过程中选择默认场景，推荐美团的运营实习生岗位，地点在上海。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "ci_email",
+      "scenario": "CI Email 场景 1：盘点今日收件箱，判断哪些邮件需要本人回复。",
+      "expected_outcome": "Mira 通过邮箱集成（如 Gmail/Outlook MCP，或显式说明无连接时回退到询问邮箱授权）拉取「今日」收件箱（基于今天 2026-05-11），输出一份分类清单：必须回复 / 可延后回复 / 无需回复，每条给出发件人、主题摘要、判断依据（如直接 @ 提问、含截止日期、合同/招聘相关等）。无邮件时应直接说明。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "查一下今日收到的邮件，判断一下有哪些需要我回复。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "ci_email",
+      "scenario": "CI Email 场景 2：向指定候选人发送一封宝时得（Positec）割草机整机测试工程师的岗位介绍邮件，主题与正文已给定。",
+      "expected_outcome": "Mira 通过邮件工具发送邮件至 837649599@qq.com（收件人姓名：周正雨），主题为「宝时得（Positec）割草机整机测试工程师 - 诚邀加入」，正文严格沿用用户给出的岗位介绍（公司简介 / 岗位 / 职责 / 任职要求 / 亮点 / 落款 CI Dingding 等关键段落必须完整保留，不得擅自删改或新增虚假事实）。回执应回报：收件人、主题、发送状态、（如可获取）邮件 ID；签名块允许换行格式微调但不得改文意。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "给候选人：周正雨 837649599@qq.com 发一封岗位介绍邮件 内容如下\n\n主题：宝时得（Positec）割草机整机测试工程师 - 诚邀加入\n\n正文：\n\n您好，\n\n我是来自猎头顾问的招聘顾问，目前正在为宝时得集团（Positec Group）寻访一位割草机整机测试工程师，希望借此机会向您介绍这一职位，期待与您进一步探讨。\n\n关于宝时得\n\n宝时得集团成立于1994年，总部位于苏州，是全球领先的电动工具与智能园林设备制造商。旗下拥有WORX威克士、Kress等知名品牌，产品覆盖全球近70个国家和地区。集团在苏州、上海、意大利、澳大利亚设有四大研发中心，拥有600余名研发人员，累计专利超8000项。其智能机器人割草机在欧洲现代渠道市场占有率长期居于全球第一，近期完成了超过2.5亿美元的首轮股权融资，正处于高速发展阶段。\n\n岗位：割草机整机测试工程师\n\n工作地点：苏州\n\n主要职责：\n\n负责机器人割草机整机及核心部件（电机、控制板、传感器、电池系统）的硬件测试方案制定与执行\n设计并搭建功能测试、可靠性测试、环境适应性测试（振动、温湿度、淋雨）及耐久性测试台架\n制定测试规范、测试用例及判定标准，输出完整测试报告与缺陷跟踪记录\n针对AI导航、超声波避障、RTK定位、雨淋传感器等智能模块开展系统级集成验证\n与硬件、固件、结构、质量工程团队协作，推动新产品设计验证（DVT/PVT）与问题闭环\n参与安全认证测试（如CE、UL等），确保产品符合国际标准要求\n支持量产阶段工艺测试评审，保障产品一致性与制造可靠性\n\n任职要求：\n\n本科及以上学历，机械工程、电气工程、机电一体化或相关专业\n3年以上硬件/整机测试经验，有电动工具、智能家居、机器人或户外设备行业背景者优先\n熟悉测试仪器仪表的使用（示波器、万用表、频谱仪等），具备测试夹具设计能力\n了解常见可靠性测试标准及安全认证流程（如IEC、CE、UL）\n具备良好的问题分析与根因定位能力，熟悉8D或FMEA等质量工具\n英语读写能力良好，能够阅读国际标准文件\n\n为什么选择这个机会\n\n宝时得智能割草机器人全球市占率第一，处于行业技术前沿\n完善的技术研发平台，参与从前期设计验证到量产的全链路工作\n国际化团队与视野，产品面向全球市场\n公司刚完成大额融资，处于快速扩张期，个人发展空间显著\n\n如果以上职位与您的职业发展方向契合，欢迎回复此邮件或直接联系我进一步沟通。期待与您交流！\n\n此致\n\nCI Dingding"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "ci_dingding",
+      "scenario": "CI 钉钉场景 1：创建一个明天下午 3 点、主题为「重塑质量安全」的会议日程，与会人为「质量保障」部门下的所有人。",
+      "expected_outcome": "Mira 通过钉钉集成创建日程：时间 = 2026-05-12 15:00（基于今天 2026-05-11 → 明天）；主题 = 重塑质量安全；与会人 = 质量保障部门下全员（如需经过部门解析应说明解析路径）。回执应回报：日程主题、开始/结束时间、邀请人数或部门标签、（如可获取）日程 ID。无法访问通讯录时应说明并请求名单。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "创建一个日程 明天下午3点 主题是重塑质量安全 与会人员是质量保障下的所有人。"
+      ]
+    },
+    {
+      "_tier": "light",
+      "_category": "ci_dingding",
+      "scenario": "CI 钉钉场景 2：一次性创建两个待办——（a）明天上午 9 点联系候选人王霞沟通面试注意事项；（b）明天下午 3 点与甲方对齐招聘名额并敲定入职事宜。",
+      "expected_outcome": "Mira 通过钉钉待办工具创建两条 TODO：1）2026-05-12 09:00 — 给候选人王霞打电话，沟通面试注意事项；2）2026-05-12 15:00 — 与甲方沟通招聘名额，敲定求职者入职事宜。回执必须分别确认两个待办的标题、提醒时间、（如可获取）待办 ID。不可只创建一个就交付，也不可静默成功。",
+      "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
+      "user_inputs": [
+        "创建两个待办 一个是明天上午9点给候选人王霞打电话沟通面试注意事项 另一个是明天下午3点和甲方沟通招聘名额，敲定求职者入职事宜。"
+      ]
+    }
+  ]
+}
