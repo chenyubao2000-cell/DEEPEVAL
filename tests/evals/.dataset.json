@@ -167,7 +167,7 @@
       "expected_outcome": "Mira 通过钉钉集成创建日程：时间=执行时间下一天的下午3点；主题 = 重塑质量安全；与会人 = 凌凯、陈玉宝、周正雨。回执应回报：日程主题、开始/结束时间、邀请人数或部门标签、（如可获取）日程 ID。无法访问通讯录时应说明并请求名单。",
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
-        "创建一个日程 明天下午3点 主题是重塑质量安全 与会人员是质量保障下的所有人。"
+        "创建一个日程 明天下午3点 主题是重塑质量安全 与会人员是与会人为有凌凯、陈玉宝、周正雨。"
       ]
     },
     {
