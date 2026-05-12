@@ -67,7 +67,8 @@ def _dump_debug(prompt: str, stdout: str, stderr: str, err: str, attempt: int) -
             f"=== ERROR ===\n{err}\n\n"
             f"=== STDOUT ({len(stdout)} chars) ===\n{stdout}\n\n"
             f"=== STDERR ({len(stderr)} chars) ===\n{stderr}\n\n"
-            f"=== PROMPT ({len(prompt)} chars) ===\n{prompt}\n"
+            f"=== PROMPT ({len(prompt)} chars) ===\n{prompt}\n",
+            encoding="utf-8",
         )
     except Exception:
         pass
@@ -101,10 +102,16 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
         last_stdout = ""
         for attempt in range(1, MAX_RETRIES + 1):
             with _CLI_LOCK:
+                # Pipe prompt via stdin, not argv. Tool-rich prompts (78 mira
+                # tools × ~1KB description each) easily exceed Windows's ~32KB
+                # CreateProcess command-line limit otherwise.
                 result = subprocess.run(
-                    [CLAUDE_BIN, "-p", full_prompt],
+                    [CLAUDE_BIN, "-p"],
+                    input=full_prompt,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=CLI_TIMEOUT_S,
                     check=False,
                 )
@@ -139,37 +146,41 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
         last_err: Optional[str] = None
         for attempt in range(1, MAX_RETRIES + 1):
             async with _CLI_ASEMAPHORE:
+                # See sync path: pipe prompt via stdin to avoid Windows argv
+                # length limit when tool descriptions inflate the prompt.
                 proc = await asyncio.create_subprocess_exec(
-                    CLAUDE_BIN, "-p", full_prompt,
+                    CLAUDE_BIN, "-p",
+                    stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
                 try:
                     stdout, stderr = await asyncio.wait_for(
-                        proc.communicate(), timeout=CLI_TIMEOUT_S
+                        proc.communicate(input=full_prompt.encode("utf-8")),
+                        timeout=CLI_TIMEOUT_S,
                     )
                 except asyncio.TimeoutError:
                     proc.kill()
                     raise
             if proc.returncode == 0:
-                out = stdout.decode().strip()
+                out = stdout.decode("utf-8", errors="replace").strip()
                 if schema is None:
                     return out
                 try:
                     return schema.model_validate_json(_extract_json(out))
                 except Exception as parse_err:
                     last_err = f"schema parse error: {parse_err}; raw: {out[:300]}"
-                    _dump_debug(full_prompt, stdout.decode(), stderr.decode(), last_err, attempt)
+                    _dump_debug(full_prompt, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"), last_err, attempt)
                     if attempt < MAX_RETRIES:
                         await asyncio.sleep(RETRY_BACKOFF_S)
                         continue
                     raise RuntimeError(last_err)
             last_err = (
                 f"claude CLI rc={proc.returncode}; "
-                f"stderr={stderr.decode().strip()[:500]!r}; "
-                f"stdout={stdout.decode().strip()[:300]!r}"
+                f"stderr={stderr.decode("utf-8", errors="replace").strip()[:500]!r}; "
+                f"stdout={stdout.decode("utf-8", errors="replace").strip()[:300]!r}"
             )
-            _dump_debug(full_prompt, stdout.decode(), stderr.decode(), last_err, attempt)
+            _dump_debug(full_prompt, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"), last_err, attempt)
             if attempt < MAX_RETRIES:
                 await asyncio.sleep(RETRY_BACKOFF_S)
                 continue

@@ -1,16 +1,18 @@
 """Tool-use metrics for Mira (mixed multi-turn + per-turn).
 
 Multi-turn (one test, two metrics):
-  - ToolUseMetric(available_tools=[ToolCall(name=...), ...])
+  - ToolUseMetric(available_tools=[ToolCall(name=..., description=...), ...])
   - TopicAdherenceMetric(relevant_topics=[...])
 
 Per-turn (parametrized): one LLMTestCase per assistant turn that actually
 called a tool — checked with ArgumentCorrectnessMetric.
 
-`available_tools` is populated from the Mira tool registry in
-`.research/mira-tools.md` (19 static + 23 BUA + evaluate_people). We only
-need the `name` field for ToolUseMetric's availability check — input/output
-are left None on these placeholder ToolCalls.
+`AVAILABLE_TOOLS` is sourced from the on-disk Langfuse cache
+(`.cache/tools-<env>.json`), which is populated by report.py from real Mira
+traces. Each placeholder ToolCall carries the tool's description so the judge
+can evaluate tool choice against its declared scope. Empty list on first run
+(before cache exists) — report.py then refreshes from the first golden's trace
+and patches this metric in place via `_patch_tooluse_metrics_in_place`.
 """
 from __future__ import annotations
 
@@ -33,31 +35,23 @@ from tests.evals._driver import (
     golden_id,
     load_goldens,
 )
+from tests.evals._langfuse_tools import available_tool_registry
 
 
 judge = ClaudeCliJudge()
 
 
-# --- Mira's full tool registry (from .research/mira-tools.md) -----------------
+# --- Mira's tool registry (real, per-session, from Langfuse cache) ------------
 
-_STATIC_TOOLS = [
-    "search", "company_search", "people_search", "clarify_question", "confirm",
-    "write_todos", "complete", "code_interpreter", "sb_command_execute",
-    "sb_file_create", "sb_file_rewrite", "sb_file_edit", "sb_docx_create",
-    "sb_pptx_create", "sb_xlsx_create", "sb_pdf_create", "sb_image_create",
-    "generate_people_data", "evaluate_people",
-]
+def _build_available_tools() -> list[ToolCall]:
+    reg = available_tool_registry()
+    return [
+        ToolCall(name=name, description=meta.get("description"))
+        for name, meta in sorted(reg.items())
+    ]
 
-_BUA_TOOLS = [
-    "bua_check_status", "bua_request_authorization", "bua_confirm_sensitive_action",
-    "bua_navigate", "bua_click", "bua_type", "bua_scroll", "bua_extract_content",
-    "bua_wait_for_user", "bua_snapshot", "bua_dom_tree", "bua_hover", "bua_fill",
-    "bua_fill_form", "bua_press_key", "bua_handle_dialog", "bua_wait_for",
-    "bua_screenshot", "bua_new_tab", "bua_list_tabs", "bua_select_tab",
-    "bua_close_tab", "bua_evaluate",
-]
 
-AVAILABLE_TOOLS = [ToolCall(name=t) for t in _STATIC_TOOLS + _BUA_TOOLS]
+AVAILABLE_TOOLS: list[ToolCall] = _build_available_tools()
 
 
 # --- Topics Mira is in-domain for ---------------------------------------------
@@ -105,6 +99,26 @@ MULTI_TURN_METRICS = [
 ARG_CORRECTNESS = ArgumentCorrectnessMetric(
     threshold=0.5, model=judge, async_mode=False,
 )
+
+
+def _patch_tooluse_metrics_in_place(registry: dict[str, dict]) -> int:
+    """Re-set `available_tools` on the `ToolUseMetric` instance from the freshly
+    refreshed registry. Mutates in place so any caller that already holds a
+    reference to the metric (e.g. report.py's `metric_rows`) sees the update.
+
+    Returns the new tool count. Called by report.py after a cache refresh.
+    """
+    new_tools = [
+        ToolCall(name=name, description=meta.get("description"))
+        for name, meta in sorted(registry.items())
+    ]
+    for m in MULTI_TURN_METRICS:
+        if isinstance(m, ToolUseMetric):
+            m.available_tools = new_tools
+    # Module-level constant kept in sync so anyone re-reading sees the new list.
+    global AVAILABLE_TOOLS
+    AVAILABLE_TOOLS = new_tools
+    return len(new_tools)
 
 
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)

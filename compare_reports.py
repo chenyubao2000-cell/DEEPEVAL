@@ -19,6 +19,11 @@ import argparse
 import html as html_lib
 import json
 import sys
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +31,7 @@ from typing import Any
 # ── data model ──────────────────────────────────────────────────────────────
 
 def _load(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _match_goldens(left: dict, right: dict) -> list[tuple[dict | None, dict | None]]:
@@ -377,7 +382,7 @@ def main() -> None:
     left = _load(Path(args.left))
     right = _load(Path(args.right))
     html_out = render_html(left, right, args.left_label, args.right_label)
-    Path(args.out).write_text(html_out)
+    Path(args.out).write_text(html_out, encoding="utf-8")
     print(f"✓ wrote {args.out}  ({Path(args.out).stat().st_size/1024:.1f} KB)")
 
 

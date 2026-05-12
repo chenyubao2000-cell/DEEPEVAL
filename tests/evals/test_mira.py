@@ -39,7 +39,7 @@ TIER_FILTER = os.environ.get("MIRA_GOLDEN_TIER", "all").lower()
 
 
 def _load_goldens() -> list[dict]:
-    with DATASET_PATH.open() as f:
+    with DATASET_PATH.open(encoding="utf-8") as f:
         data = json.load(f)
     goldens = data["goldens"]
     if TIER_FILTER in ("light", "heavy"):

@@ -19,6 +19,11 @@ import argparse
 import html as html_lib
 import re
 import sys
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import sys
 from pathlib import Path
 
 from markdown_it import MarkdownIt
@@ -301,9 +306,9 @@ def main() -> None:
         sys.exit(2)
 
     out = Path(args.out) if args.out else src.with_suffix(".html")
-    md_text = src.read_text()
+    md_text = src.read_text(encoding="utf-8")
     title = next((l[2:].strip() for l in md_text.splitlines() if l.startswith("# ")), None)
-    out.write_text(render(md_text, title=title))
+    out.write_text(render(md_text, title=title), encoding="utf-8")
     print(f"✓ wrote {out}  ({out.stat().st_size / 1024:.1f} KB)")
 
 

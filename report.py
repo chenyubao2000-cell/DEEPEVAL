@@ -29,6 +29,10 @@ import json
 import sys
 import time
 import traceback
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -38,11 +42,19 @@ ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "evals"))
 
+from _env import current_env, load_env   # type: ignore[import-not-found]
+from _langfuse_tools import (             # type: ignore[import-not-found]
+    available_tool_registry,
+    is_stale,
+    load_cached,
+    refresh_cache_from_session,
+)
 from _driver import (  # type: ignore[import-not-found]
     build_conversational,
     drive_mira,
     explode_to_llm_cases,
     load_goldens,
+    set_registry,
 )
 
 import test_mira_e2e as f_e2e            # type: ignore[import-not-found]
@@ -50,6 +62,9 @@ import test_mira_custom as f_custom      # type: ignore[import-not-found]
 import test_mira_tooluse as f_tooluse    # type: ignore[import-not-found]
 import test_mira_safety as f_safety      # type: ignore[import-not-found]
 import test_mira_others as f_others      # type: ignore[import-not-found]
+import test_mira_run as f_run            # type: ignore[import-not-found]
+
+from deepeval.errors import MissingTestCaseParamsError
 
 
 DEFAULT_CATEGORIES = ["crm", "voice", "ci_email", "ci_dingding"]
@@ -62,6 +77,8 @@ def _collect_metrics() -> list[tuple[str, str, Any]]:
     scope = 'multi' (ConversationalTestCase) or 'single' (LLMTestCase per turn).
     """
     rows: list[tuple[str, str, Any]] = []
+    for m in f_run.METRICS:
+        rows.append(("run", "multi", m))
     for m in f_e2e.METRICS:
         rows.append(("e2e", "multi", m))
     for m in f_custom.METRICS:
@@ -156,6 +173,19 @@ def _score_one(metric, test_case) -> dict:
             "error": getattr(metric, "error", None),
             "elapsed": time.time() - t0,
         }
+    except MissingTestCaseParamsError as e:
+        # Test case is missing a field this metric needs (e.g.
+        # ArgumentCorrectnessMetric on a turn with zero tool calls). This is a
+        # "metric does not apply to this case" signal, not a failure — return
+        # a NONE verdict rather than ERROR so aggregations stay honest.
+        return {
+            "score": None,
+            "threshold": getattr(metric, "threshold", None),
+            "success": None,
+            "reason": f"not applicable: {e}",
+            "error": None,
+            "elapsed": time.time() - t0,
+        }
     except Exception as e:  # judge crash / parse error / etc.
         return {
             "score": None,
@@ -207,7 +237,7 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
     if session.warnings:
         print(f"     ⚠ warnings: {session.warnings}")
 
-    conv_case = build_conversational(golden, turns)
+    conv_case = build_conversational(golden, turns, session=session)
     llm_cases = explode_to_llm_cases(turns, scenario=scenario)
 
     out = GoldenResult(
@@ -243,11 +273,14 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                 per_case = [_score_one(metric, lc) for lc in llm_cases]
                 scores = [pc["score"] for pc in per_case if pc["score"] is not None]
                 errors = [pc["error"] for pc in per_case if pc["error"]]
+                # success=None marks "metric did not apply" — exclude from the
+                # all() aggregate so N/A cases don't flip a passing metric to FAIL.
+                real_successes = [pc["success"] for pc in per_case if pc["success"] is not None]
                 mr = MetricResult(
                     file=file_label, scope=scope, metric=display, cls=cls,
                     score=(sum(scores) / len(scores)) if scores else None,
                     threshold=getattr(metric, "threshold", None),
-                    success=all(pc.get("success") for pc in per_case) if per_case else None,
+                    success=all(real_successes) if real_successes else None,
                     reason=next((pc["reason"] for pc in per_case if pc.get("reason")), None),
                     error=errors[0] if errors else None,
                     elapsed_s=sum(pc["elapsed"] for pc in per_case),
@@ -306,7 +339,7 @@ def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
             for gr in results
         ],
     }
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _aggregate_metric(results: list[GoldenResult]) -> list[dict]:
@@ -370,7 +403,10 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     add(f"# Mira 评测报告")
     add("")
     add(f"- 生成时间：`{meta['generated_at']}`")
+    add(f"- 环境：`{meta['env']}`")
     add(f"- BFF：`{meta['bff_url']}`")
+    add(f"- Langfuse：`{meta['langfuse_host']}`")
+    add(f"- 工具清单：{meta['n_available_tools']} 个（来源：`{meta['tools_source']}`）")
     add(f"- 命令：`{meta['invocation']}`")
     add(f"- Goldens：{meta['n_goldens']} 条  ·  指标：{meta['n_metrics']} 项 / golden  ·  总评估次数：{meta['n_goldens'] * meta['n_metrics']}")
     add(f"- 总耗时：**{meta['total_elapsed_s']:.0f}s**（Mira 驱动 {meta['mira_total_s']:.0f}s + Judge 评分 {meta['judge_total_s']:.0f}s）")
@@ -485,21 +521,50 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     add("")
     add(f"完整 JSON 详情见 `{meta['json_path']}`。")
 
-    out_path.write_text("\n".join(lines))
+    out_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 # ── main ────────────────────────────────────────────────────────────────────
 
+def _install_registry(env: str) -> tuple[int, str]:
+    """Push the cached tool registry into the driver and ToolUseMetric. Returns
+    (tool_count, source_label) for the report header."""
+    cached = load_cached(env)
+    registry = {t["name"]: t for t in (cached or {}).get("tools", [])}
+    set_registry(registry)
+    f_tooluse._patch_tooluse_metrics_in_place(registry)
+    if not cached:
+        return 0, "(empty: no cache yet)"
+    return len(registry), f".cache/tools-{env}.json @ {cached.get('fetched_at','?')}"
+
+
 def main() -> None:
     import os
     ap = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=__doc__)
+    ap.add_argument("--env", help="environment name (default: $MIRA_ENV or 'preview'); selects .env.<name>")
     ap.add_argument("--category", help="comma-separated _category filter (e.g. crm,voice)")
     ap.add_argument("--tier", choices=["light", "heavy"], help="filter by _tier")
     ap.add_argument("--index", help="comma-separated 0-based indices")
     ap.add_argument("--scenario", help="substring match on scenario")
     ap.add_argument("--all", action="store_true", help="run all goldens (overrides default-category filter)")
     ap.add_argument("--out", default="reports/report", help="output basename (will write .json + .md)")
+    ap.add_argument("--refresh-tools", action="store_true",
+                    help="force a Langfuse refresh of the tool-registry cache after the first golden")
+    ap.add_argument("--no-langfuse-refresh", action="store_true",
+                    help="never query Langfuse; use cache only (offline / CI)")
     args = ap.parse_args()
+
+    # ── env + cache bootstrap ───────────────────────────────────────────────
+    env = load_env(args.env)
+    cached = load_cached(env)
+    stale = bool(cached and is_stale(cached))
+    n_tools, tools_source = _install_registry(env)
+    if cached is None and not args.no_langfuse_refresh:
+        print(f"     no tool cache for env={env}; will populate from Langfuse after first golden")
+    elif stale and not args.no_langfuse_refresh:
+        print(f"     ⚠ tool cache for env={env} is older than 7 days; will refresh after first golden")
+    elif cached:
+        print(f"     using cached tool registry: {n_tools} tools  ({tools_source})")
 
     goldens = load_goldens()
     selected = _select_goldens(args, goldens)
@@ -515,10 +580,21 @@ def main() -> None:
     print(f"Total measurements: {len(selected) * n_metrics}")
     print()
 
+    needs_refresh = (cached is None or stale or args.refresh_tools) and not args.no_langfuse_refresh
+
     start = time.time()
     results: list[GoldenResult] = []
-    for idx, g in selected:
+    for i, (idx, g) in enumerate(selected):
         results.append(run_one_golden(idx, g))
+        # Refresh tool cache after the first golden lands so subsequent goldens
+        # use the up-to-date registry. We only do it once per run.
+        if i == 0 and needs_refresh and results[0].conv_id:
+            print(f"     refreshing tool cache from Langfuse session {results[0].conv_id}...")
+            new_cache = refresh_cache_from_session(results[0].conv_id, env=env)
+            if new_cache:
+                n_tools, tools_source = _install_registry(env)
+                print(f"     ✓ tool cache refreshed: {n_tools} tools")
+                needs_refresh = False  # done
 
     total_elapsed = time.time() - start
     mira_total = sum(gr.mira_elapsed_s for gr in results)
@@ -531,7 +607,11 @@ def main() -> None:
 
     meta = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "bff_url": os.environ.get("MIRA_BFF_URL", "https://mira-bff-preview.up.railway.app"),
+        "env": env,
+        "bff_url": os.environ.get("MIRA_BFF_URL", ""),
+        "langfuse_host": os.environ.get("LANGFUSE_HOST", ""),
+        "n_available_tools": n_tools,
+        "tools_source": tools_source,
         "invocation": " ".join(["python", "report.py", *sys.argv[1:]]),
         "n_goldens": len(results),
         "n_metrics": n_metrics,

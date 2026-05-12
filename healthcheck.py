@@ -16,6 +16,10 @@ import argparse
 import json
 import sys
 import time
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 # Make tests/evals/ importable as a package
@@ -244,7 +248,7 @@ def main():
         "n_tool_calls": n_tool,
         "session_warnings": session.warnings,
         "results": serialisable,
-    }, ensure_ascii=False, indent=2))
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nFull JSON: {out_path}")
 
 

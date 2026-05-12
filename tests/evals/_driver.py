@@ -31,6 +31,22 @@ from mira_client import MiraSession
 _MAX_TOOL_OUTPUT_CHARS = 4000
 
 
+# Tool registry (name -> {description, input_schema}). Populated by report.py
+# from the on-disk Langfuse cache before any goldens run, and re-set after the
+# cache is refreshed. Empty dict means "no descriptions available" — tool calls
+# still build correctly, they just lack description context for the judge.
+_REGISTRY: dict[str, dict] = {}
+
+
+def set_registry(registry: dict[str, dict]) -> None:
+    """Install the tool registry used to enrich tool-call descriptions.
+
+    Callers pass the dict returned by `_langfuse_tools.available_tool_registry`.
+    """
+    global _REGISTRY
+    _REGISTRY = registry or {}
+
+
 def _coerce_output(raw: Any) -> Any:
     """Make a tool `output` field both JSON-serialisable and bounded in size."""
     if raw is None:
@@ -48,12 +64,18 @@ def _coerce_output(raw: Any) -> Any:
 
 
 def _tc_dict_to_toolcall(tc: dict) -> ToolCall:
-    """Convert a `MiraSession` tool-call dict to a DeepEval `ToolCall`."""
+    """Convert a `MiraSession` tool-call dict to a DeepEval `ToolCall`.
+
+    The tool's description (from the cached Langfuse registry) is attached so
+    downstream metrics can judge tool choice against the tool's declared scope.
+    """
+    name = tc.get("tool_name") or "unknown_tool"
+    meta = _REGISTRY.get(name) or {}
     return ToolCall(
-        name=tc.get("tool_name") or "unknown_tool",
+        name=name,
         input_parameters=tc.get("input") if isinstance(tc.get("input"), dict) else None,
         output=_coerce_output(tc.get("output")),
-        description=None,
+        description=meta.get("description"),
         reasoning=None,
     )
 
@@ -90,13 +112,36 @@ def drive_mira(golden: dict) -> tuple[MiraSession, list[Turn]]:
     return session, turns
 
 
-def build_conversational(golden: dict, turns: list[Turn]) -> ConversationalTestCase:
-    """Wrap turns in a ConversationalTestCase using golden metadata."""
+def build_conversational(
+    golden: dict,
+    turns: list[Turn],
+    session: "MiraSession | None" = None,
+) -> ConversationalTestCase:
+    """Wrap turns in a ConversationalTestCase using golden metadata.
+
+    If `session` is provided, stash session.warnings and any tool-error markers
+    into `test_case.metadata`. RunCompletionMetric reads these to do mechanical
+    health checks without firing an LLM judge. Other metrics ignore metadata.
+    """
+    metadata: dict | None = None
+    if session is not None:
+        tool_errors: list[str] = []
+        for entry in session.history:
+            for tc in entry.get("tool_calls") or []:
+                if tc.get("status") == "error":
+                    name = tc.get("tool_name") or "?"
+                    out = tc.get("output")
+                    tool_errors.append(f"{name}: {str(out)[:80]}")
+        metadata = {
+            "mira_warnings": list(session.warnings),
+            "mira_tool_errors": tool_errors,
+        }
     return ConversationalTestCase(
         turns=turns,
         scenario=golden.get("scenario"),
         expected_outcome=golden.get("expected_outcome"),
         chatbot_role=golden.get("chatbot_role"),
+        metadata=metadata,
     )
 
 
@@ -129,7 +174,7 @@ def load_goldens() -> list[dict]:
     import os
 
     dataset_path = Path(__file__).parent / ".dataset.json"
-    with dataset_path.open() as f:
+    with dataset_path.open(encoding="utf-8") as f:
         data = json.load(f)
     goldens = data["goldens"]
     tier = os.environ.get("MIRA_GOLDEN_TIER", "all").lower()
