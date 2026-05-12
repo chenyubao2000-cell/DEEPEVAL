@@ -636,7 +636,7 @@ def main() -> None:
     print(f"PASS={n_pass}  FAIL={n_fail}  ERROR={n_err}  NONE={n_none}  ({(n_pass/total*100) if total else 0:.1f}% pass)")
     print()
     print(f"📊 Markdown report : {md_path}")
-    print(f"🧾 JSON details    : {json_path}")
+    print(f"🧾 JSON1 details    : {json_path}")
     print("=" * 80)
 
 
