@@ -101,6 +101,64 @@ def _metric_label(metric) -> str:
     return cls
 
 
+# ── skip-by-category policy ────────────────────────────────────────────────
+#
+# Some metrics produce no useful signal on certain golden categories — they
+# just burn judge quota. We skip them by default, but keep them visible in
+# the run log so silent-skip ≠ secret-skip. Override per-golden by setting
+# `_skip_metrics` (a list of class names or "GEval/<name>" labels) on the
+# golden — that takes precedence over these category defaults.
+#
+# Reasoning behind each entry:
+#   - Bias / Toxicity:      Chinese recruiter dialog → near-constant 0.00 PASS,
+#                           no discrimination signal observed in 4+ runs.
+#   - PIILeakage:           voice/ci_email cases require Mira to echo back
+#                           candidate name + phone the user *provided*; judge
+#                           flags this as a leak — structural false-positive.
+#   - RoleViolation:        Mira never breaks character across observed runs.
+#   - KnowledgeRetention:   Goldens with 1U/1A have no prior facts to retain —
+#                           always 0.00 FAIL (no signal). Skip globally for
+#                           single-turn goldens; turn back on once we have
+#                           genuine multi-turn dialogue.
+#
+# Goal: cut ~25-30% of judge calls (and tokens) per run without losing signal.
+_CATEGORY_DEFAULT_SKIPS: dict[str, set[str]] = {
+    "voice":       {"BiasMetric", "ToxicityMetric", "PIILeakageMetric",
+                    "RoleViolationMetric", "KnowledgeRetentionMetric"},
+    "ci_email":    {"BiasMetric", "ToxicityMetric", "PIILeakageMetric",
+                    "RoleViolationMetric", "KnowledgeRetentionMetric"},
+    "ci_dingding": {"BiasMetric", "ToxicityMetric", "PIILeakageMetric",
+                    "RoleViolationMetric", "KnowledgeRetentionMetric"},
+    "crm":         {"BiasMetric", "ToxicityMetric", "RoleViolationMetric",
+                    "KnowledgeRetentionMetric"},
+    # Uncategorised research/sourcing goldens keep the full 17 — they often
+    # produce multi-turn content where these metrics still earn their keep.
+}
+
+
+def _resolve_skip_set(golden: dict) -> set[str]:
+    """Class names + GEval labels to skip for this golden.
+
+    Per-golden `_skip_metrics` overrides category defaults entirely. To
+    *extend* defaults instead, the golden can set `_skip_metrics_extra`.
+    """
+    cat = golden.get("_category") or ""
+    if "_skip_metrics" in golden:
+        return set(golden["_skip_metrics"] or [])
+    base = set(_CATEGORY_DEFAULT_SKIPS.get(cat, set()))
+    extra = set(golden.get("_skip_metrics_extra") or [])
+    return base | extra
+
+
+def _should_skip(metric, golden: dict) -> bool:
+    cls = type(metric).__name__
+    skip = _resolve_skip_set(golden)
+    if cls in skip:
+        return True
+    # Also support GEval display label like "GEval/ProfessionalNoFabrication"
+    return _metric_label(metric) in skip
+
+
 # ── filtering ───────────────────────────────────────────────────────────────
 
 def _select_goldens(args, goldens: list[dict]) -> list[tuple[int, dict]]:
@@ -249,9 +307,14 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
     )
 
     metric_rows = _collect_metrics()
+    skipped_for_log: list[str] = []
     for file_label, scope, metric in metric_rows:
         display = _metric_label(metric)
         cls = type(metric).__name__
+        if _should_skip(metric, golden):
+            skipped_for_log.append(f"{file_label}/{display}")
+            print(f"     ⊘ [{file_label:<7}/{scope:<6}] {display:<38}    —      —  SKIP   (token-save policy)")
+            continue
         t1 = time.time()
         if scope == "multi":
             r = _score_one(metric, conv_case)

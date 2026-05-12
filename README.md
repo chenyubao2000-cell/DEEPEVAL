@@ -278,6 +278,14 @@ DEEPEVAL/
 
 6. **Mira 非确定性**：同一条 prompt 多次跑可能走不同 agent 路径（少调或多调几个 tool、HITL 轮数变化），分数会抖动。重要结论必须**至少跑 2-3 次取均值**才算可信。
 
+7. **省 token 的两个旋钮**（默认已开启，省 ~50% judge token / 跑）：
+   - **`_MAX_TOOL_OUTPUT_CHARS`**：`tests/evals/_driver.py` 顶部，默认 **1500 字符/工具**（旧版 4000）。多轮 metric 把所有 tool output 拼进 judge prompt，heavy goldens 上 4000 × 19 工具 = 76 KB，撑爆 context。1500 够保留 jobGroupId / 错误信息 / 关键数字。临时调大：`MIRA_MAX_TOOL_OUTPUT_CHARS=4000 .venv/bin/python report.py …`
+   - **`_CATEGORY_DEFAULT_SKIPS`**：`report.py` 中间，按 `_category` 跳过结构性无信号指标。当前默认：
+     - voice / ci_email / ci_dingding 各跳 5 个：Bias · Toxicity · PIILeakage · RoleViolation · KnowledgeRetention
+     - crm 跳 4 个：上面去掉 PIILeakage（CRM 不必然复述 PII）
+     - 旧 10 条研究类 golden（无 `_category`）全跑 17 个
+   - **覆盖姿势**：在 golden JSON 里加 `"_skip_metrics": ["MetricName1", ...]` 替换默认，或 `"_skip_metrics_extra": [...]` 追加。
+
 7. **工具缓存生命周期**：`.cache/tools-<env>.json` 7 天软过期；每次 `report.py` 跑完第一条 golden 会从 Langfuse union 增量更新（不会清掉旧条目）；Mira 后端加新 MCP 后，下次跑评测自动覆盖到。CI 跑 `--no-langfuse-refresh` 用历史缓存，零外部依赖。
 
 8. **`.gitignore` 当前内容**：

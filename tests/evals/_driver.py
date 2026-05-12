@@ -26,9 +26,18 @@ from mira_client import MiraSession
 
 
 # Hard ceiling on how much of a tool output string we hand to the judge.
-# Tool outputs (search results, file contents, etc.) can be 50-500 KB; that
-# blows out judge context and slows the CLI. We truncate per-call.
-_MAX_TOOL_OUTPUT_CHARS = 4000
+# Tool outputs (search results, file contents, voice protocol blobs, etc.)
+# can be 50-500 KB; that blows out judge context and burns Claude CLI quota
+# fast. We truncate per-call.
+#
+# 1500 chars is enough to keep:
+#   - tool name + status
+#   - the head of stdout (key fields like jobGroupId, counts, error name)
+#   - the first 1-2 paragraphs of long protocol/instruction blobs
+# but not 8 KB of voice_get_protocol's MANDATORY EXECUTION PROTOCOL text.
+# Override per-run with MIRA_MAX_TOOL_OUTPUT_CHARS env var if you need more.
+import os as _os
+_MAX_TOOL_OUTPUT_CHARS = int(_os.environ.get("MIRA_MAX_TOOL_OUTPUT_CHARS", "1500"))
 
 
 # Tool registry (name -> {description, input_schema}). Populated by report.py
