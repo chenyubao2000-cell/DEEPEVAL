@@ -55,6 +55,7 @@ _VERDICT_PILL = {
     "FAIL":  '<span class="pill fail">❌ FAIL</span>',
     "ERROR": '<span class="pill err">🚨 ERR</span>',
     "NONE":  '<span class="pill none">· NONE</span>',
+    "INCONCLUSIVE": '<span class="pill inconclusive">🟡 INC</span>',
 }
 
 
@@ -252,6 +253,10 @@ th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
 .pill.fail { color: var(--fail); background: var(--fail-bg); }
 .pill.err  { color: var(--err);  background: var(--err-bg);  }
 .pill.none { color: var(--none); background: var(--none-bg); }
+.pill.inconclusive { color: #9a6700; background: #fff8c5; }
+@media (prefers-color-scheme: dark) {
+  .pill.inconclusive { color: #f0c674; background: #3a2f0a; }
+}
 .totals { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 10px; }
 .totals .pill { font-size: 13px; padding: 4px 12px; }
 .meta-row { display: flex; flex-wrap: wrap; margin: 4px 0 10px; }

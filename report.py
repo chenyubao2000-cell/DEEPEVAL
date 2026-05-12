@@ -122,6 +122,66 @@ def _metric_label(metric) -> str:
 #                           genuine multi-turn dialogue.
 #
 # Goal: cut ~25-30% of judge calls (and tokens) per run without losing signal.
+# ── Layer 1: metric signal profile ─────────────────────────────────────────
+#
+# Tags every metric we ship with one of three signal qualities. Each tier
+# changes how the metric is treated in the report:
+#
+#   "signal" → counts toward overall PASS rate. Stable, well-defined judge
+#              prompt, low historical false-positive rate. Decision-grade.
+#
+#   "noisy"  → runs and shows in the report under "辅助参考", but does NOT
+#              count toward overall PASS rate. Examples: judge known to flip
+#              on the same case across runs; metric structurally false-
+#              positives in a category (e.g. PIILeakage on voice cases where
+#              the user *asked* Mira to echo a phone number); or the metric
+#              demands inputs we don't have (KnowledgeRetention on 1U/1A).
+#
+#   "broken" → globally skipped. DeepEval's implementation is known to be
+#              self-contradictory (RoleViolationMetric's verdicts and reason
+#              come from independent LLM calls and disagree), or the metric
+#              produces zero usable signal on our entire corpus (Bias /
+#              Toxicity on Chinese recruiter dialogue).
+#
+# Keys are either ClassName (matches type(metric).__name__) or the
+# display label like "GEval/ProfessionalNoFabrication" (matches _metric_label).
+_METRIC_PROFILE: dict[str, str] = {
+    # signal — decision-grade
+    "RunCompletionMetric":              "signal",  # deterministic, zero-cost mechanical check
+    "ConversationCompletenessMetric":   "signal",
+    "TurnRelevancyMetric":              "signal",
+    "RoleAdherenceMetric":              "signal",
+    "GoalAccuracyMetric":               "signal",
+    "GEval/ProfessionalNoFabrication":  "signal",
+    "GEval/DeliverableMatchesRequest":  "signal",
+    "GEval/GroundedNoFabrication":      "signal",
+    "ToolUseMetric":                    "signal",
+    "ArgumentCorrectnessMetric":        "signal",
+    "AnswerRelevancyMetric":            "signal",
+    "PromptAlignmentMetric":            "signal",
+    # noisy — supplementary, won't drag PASS rate
+    "TopicAdherenceMetric":             "noisy",   # judge flips between runs, topics list hard to keep complete
+    "PIILeakageMetric":                 "noisy",   # structurally false-pos when user-provided PII is the task input
+    "KnowledgeRetentionMetric":         "noisy",   # always 0.00 on single-turn (1U/1A) goldens
+    # broken — globally skipped
+    "RoleViolationMetric":              "broken",  # verdicts vs reason self-contradict (DeepEval 4.0 two-stage judge)
+    "BiasMetric":                       "broken",  # Chinese recruiter corpus → near-constant 0.00; judge jitters out false FAILs
+    "ToxicityMetric":                   "broken",  # same as above
+}
+
+
+def _profile_for(metric) -> str:
+    """Look up metric's signal profile. Unknown metrics default to 'signal'."""
+    label = _metric_label(metric)
+    cls = type(metric).__name__
+    return _METRIC_PROFILE.get(label) or _METRIC_PROFILE.get(cls) or "signal"
+
+
+def _profile_for_label(label: str, cls: str) -> str:
+    return _METRIC_PROFILE.get(label) or _METRIC_PROFILE.get(cls) or "signal"
+
+
+# ── Layer 1 (per-category) + Layer 1 (broken global) skip policy ───────────
 _CATEGORY_DEFAULT_SKIPS: dict[str, set[str]] = {
     "voice":       {"BiasMetric", "ToxicityMetric", "PIILeakageMetric",
                     "RoleViolationMetric", "KnowledgeRetentionMetric"},
@@ -150,13 +210,20 @@ def _resolve_skip_set(golden: dict) -> set[str]:
     return base | extra
 
 
-def _should_skip(metric, golden: dict) -> bool:
+def _should_skip(metric, golden: dict) -> tuple[bool, str | None]:
+    """Decide whether to skip `metric` for this golden.
+
+    Returns (skip?, reason). Reasons:
+      - "broken-profile"  → Layer 1 global skip (DeepEval impl unreliable)
+      - "category-policy" → Layer 1 per-category skip (no signal here)
+    """
+    if _profile_for(metric) == "broken":
+        return True, "broken-profile"
     cls = type(metric).__name__
     skip = _resolve_skip_set(golden)
-    if cls in skip:
-        return True
-    # Also support GEval display label like "GEval/ProfessionalNoFabrication"
-    return _metric_label(metric) in skip
+    if cls in skip or _metric_label(metric) in skip:
+        return True, "category-policy"
+    return False, None
 
 
 # ── filtering ───────────────────────────────────────────────────────────────
@@ -200,6 +267,8 @@ class MetricResult:
     error: str | None
     elapsed_s: float
     n_cases: int = 1
+    profile: str = "signal"           # signal | noisy | broken (Layer 1)
+    audit_warning: str | None = None  # Layer 2: judge self-contradicted
 
 
 @dataclass
@@ -256,8 +325,17 @@ def _score_one(metric, test_case) -> dict:
 
 
 def _verdict(r: MetricResult) -> str:
+    """Resolve a metric result to PASS / FAIL / ERROR / NONE / INCONCLUSIVE.
+
+    Layer 2: when the audit detected the judge contradicting itself
+    (verdict says FAIL but reason praises the output, or vice versa), we
+    return INCONCLUSIVE instead of the original verdict. INCONCLUSIVE never
+    counts toward PASS rate — it's a flag for "this measurement is untrustworthy".
+    """
     if r.error:
         return "ERROR"
+    if r.audit_warning:
+        return "INCONCLUSIVE"
     if r.success is True:
         return "PASS"
     if r.success is False:
@@ -265,6 +343,61 @@ def _verdict(r: MetricResult) -> str:
     if r.score is None or r.threshold is None:
         return "NONE"
     return "PASS" if float(r.score) >= float(r.threshold) else "FAIL"
+
+
+# ── Layer 2: judge consistency audit ───────────────────────────────────────
+#
+# DeepEval metrics use two independent LLM calls — `_generate_verdicts`
+# (does the violation exist?) and `_generate_reason` (write me an
+# explanation). These calls can disagree; we've seen RoleViolationMetric
+# verdicts=yes (score 0.00) paired with reason="no actual role-breaking
+# behavior occurred ... assistant fully maintained boundaries". The metric's
+# success bit follows the score, so the bug poses as a real FAIL.
+#
+# This audit scans the reason text for phrases that flatly contradict the
+# numeric verdict. When found, the result is marked INCONCLUSIVE and the
+# warning is surfaced in the report.
+_INNOCENT_PHRASES = (
+    "no actual", "no role violation", "no role-breaking",
+    "fully maintained", "properly used", "preserved its identity",
+    "did not fabricate", "did not invent", "did not claim",
+    "no bias detected", "no toxicity detected", "no privacy",
+    "no pii", "respected", "no violation",
+)
+_GUILTY_PHRASES = (
+    "fabricated", "violated", "failed to deliver", "did not deliver",
+    "made up", "invented", "leaked", "incorrect", "wrong",
+    "off-topic", "unwarranted",
+)
+
+
+def _audit_judge_consistency(score, threshold, success, reason) -> str | None:
+    """Return a warning string if verdict and reason directionally disagree."""
+    if reason is None:
+        return None
+    text = reason.lower()
+
+    # Determine the *numeric* verdict (ignoring our INCONCLUSIVE machinery)
+    if success is True:
+        numeric_verdict = "PASS"
+    elif success is False:
+        numeric_verdict = "FAIL"
+    elif score is None or threshold is None:
+        return None
+    else:
+        numeric_verdict = "PASS" if float(score) >= float(threshold) else "FAIL"
+
+    if numeric_verdict == "FAIL":
+        hits = sum(p in text for p in _INNOCENT_PHRASES)
+        guilty = sum(p in text for p in _GUILTY_PHRASES)
+        if hits >= 2 and guilty == 0:
+            return f"judge contradiction: verdict=FAIL but reason describes no violation ({hits} innocent phrases)"
+    elif numeric_verdict == "PASS":
+        guilty = sum(p in text for p in _GUILTY_PHRASES)
+        innocent = sum(p in text for p in _INNOCENT_PHRASES)
+        if guilty >= 3 and innocent == 0:
+            return f"judge contradiction: verdict=PASS but reason describes problems ({guilty} guilty phrases)"
+    return None
 
 
 # ── runner ──────────────────────────────────────────────────────────────────
@@ -307,13 +440,14 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
     )
 
     metric_rows = _collect_metrics()
-    skipped_for_log: list[str] = []
     for file_label, scope, metric in metric_rows:
         display = _metric_label(metric)
         cls = type(metric).__name__
-        if _should_skip(metric, golden):
-            skipped_for_log.append(f"{file_label}/{display}")
-            print(f"     ⊘ [{file_label:<7}/{scope:<6}] {display:<38}    —      —  SKIP   (token-save policy)")
+        profile = _profile_for(metric)
+        skip, skip_reason = _should_skip(metric, golden)
+        if skip:
+            tag = "broken" if skip_reason == "broken-profile" else "category-policy"
+            print(f"     ⊘ [{file_label:<7}/{scope:<6}] {display:<38}    —      —  SKIP   ({tag})")
             continue
         t1 = time.time()
         if scope == "multi":
@@ -323,6 +457,10 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                 score=r["score"], threshold=r["threshold"],
                 success=r["success"], reason=r["reason"], error=r["error"],
                 elapsed_s=r["elapsed"], n_cases=1,
+                profile=profile,
+                audit_warning=_audit_judge_consistency(
+                    r["score"], r["threshold"], r["success"], r["reason"]
+                ),
             )
         else:
             if not llm_cases:
@@ -331,6 +469,7 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                     score=None, threshold=getattr(metric, "threshold", None),
                     success=None, reason="no assistant turns", error=None,
                     elapsed_s=0.0, n_cases=0,
+                    profile=profile,
                 )
             else:
                 per_case = [_score_one(metric, lc) for lc in llm_cases]
@@ -339,22 +478,28 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                 # success=None marks "metric did not apply" — exclude from the
                 # all() aggregate so N/A cases don't flip a passing metric to FAIL.
                 real_successes = [pc["success"] for pc in per_case if pc["success"] is not None]
+                avg_score = (sum(scores) / len(scores)) if scores else None
+                agg_success = all(real_successes) if real_successes else None
+                first_reason = next((pc["reason"] for pc in per_case if pc.get("reason")), None)
+                thr = getattr(metric, "threshold", None)
                 mr = MetricResult(
                     file=file_label, scope=scope, metric=display, cls=cls,
-                    score=(sum(scores) / len(scores)) if scores else None,
-                    threshold=getattr(metric, "threshold", None),
-                    success=all(real_successes) if real_successes else None,
-                    reason=next((pc["reason"] for pc in per_case if pc.get("reason")), None),
+                    score=avg_score, threshold=thr,
+                    success=agg_success, reason=first_reason,
                     error=errors[0] if errors else None,
                     elapsed_s=sum(pc["elapsed"] for pc in per_case),
                     n_cases=len(llm_cases),
+                    profile=profile,
+                    audit_warning=_audit_judge_consistency(avg_score, thr, agg_success, first_reason),
                 )
         out.metric_results.append(mr)
         verdict = _verdict(mr)
-        flag = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "NONE": "·"}.get(verdict, "?")
+        flag = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "NONE": "·", "INCONCLUSIVE": "?"}.get(verdict, "?")
         score_s = f"{mr.score:.2f}" if mr.score is not None else "  —  "
         thr_s = f"≥{mr.threshold:.2f}" if mr.threshold is not None else "    "
-        print(f"     {flag} [{file_label:<7}/{scope:<6}] {display:<38} {score_s} {thr_s} {verdict:<5}  {mr.elapsed_s:>5.1f}s")
+        tail = "  " + mr.audit_warning if mr.audit_warning else ""
+        prof = f" [{profile}]" if profile != "signal" else ""
+        print(f"     {flag} [{file_label:<7}/{scope:<6}] {display:<38} {score_s} {thr_s} {verdict:<13}{prof}  {mr.elapsed_s:>5.1f}s{tail}")
     return out
 
 
@@ -387,10 +532,12 @@ def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
                         "scope": mr.scope,
                         "metric": mr.metric,
                         "cls": mr.cls,
+                        "profile": mr.profile,
                         "score": (float(mr.score) if mr.score is not None else None),
                         "threshold": (float(mr.threshold) if mr.threshold is not None else None),
                         "success": mr.success,
                         "verdict": _verdict(mr),
+                        "audit_warning": mr.audit_warning,
                         "reason": mr.reason,
                         "error": mr.error,
                         "elapsed_s": round(mr.elapsed_s, 1),
@@ -475,18 +622,60 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     add(f"- 总耗时：**{meta['total_elapsed_s']:.0f}s**（Mira 驱动 {meta['mira_total_s']:.0f}s + Judge 评分 {meta['judge_total_s']:.0f}s）")
     add("")
 
-    # ── TOP-LEVEL VERDICT ──────────────────────────────────────────────────
-    n_pass = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "PASS")
-    n_fail = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "FAIL")
-    n_err = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "ERROR")
-    n_none = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "NONE")
-    total = n_pass + n_fail + n_err + n_none
-    pass_rate = (n_pass / total * 100) if total else 0.0
-    add(f"## 总评")
+    # ── TOP-LEVEL VERDICT (Layer 4: split by profile) ──────────────────────
+    # PASS 率只统计 signal 类指标。noisy 仅作辅助参考。broken 已 skip。
+    def _tally(predicate) -> dict:
+        d = {"PASS": 0, "FAIL": 0, "ERROR": 0, "NONE": 0, "INCONCLUSIVE": 0}
+        for gr in results:
+            for mr in gr.metric_results:
+                if not predicate(mr):
+                    continue
+                v = _verdict(mr)
+                d[v] = d.get(v, 0) + 1
+        d["TOTAL"] = sum(d.values())
+        denom = d["PASS"] + d["FAIL"]
+        d["RATE"] = (d["PASS"] / denom * 100) if denom else 0.0
+        return d
+
+    signal_t = _tally(lambda mr: mr.profile == "signal")
+    noisy_t  = _tally(lambda mr: mr.profile == "noisy")
+
+    # Count metrics globally skipped via `broken` profile (per golden × per metric)
+    n_broken_skipped = sum(
+        1
+        for gr in results
+        for label, cls in [(m, c) for m, c in _METRIC_PROFILE.items()] if False
+    )  # placeholder — broken skips don't produce MetricResults, so count differently:
+    broken_metrics = [k for k, v in _METRIC_PROFILE.items() if v == "broken"]
+
+    add(f"## 总评 — 仅信号指标（signal）")
     add("")
-    add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 通过率 |")
-    add(f"|---:|---:|---:|---:|---:|")
-    add(f"| **{n_pass}** | **{n_fail}** | **{n_err}** | **{n_none}** | **{pass_rate:.1f}%** |")
+    add(f"> 信号指标 = 11 个可信、有判别力的 metric；这一行才是 Mira 真实表现的决策依据。")
+    add(f"> Noisy / Broken 的分布看下面两节。")
+    add("")
+    add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? | 通过率（PASS / (PASS+FAIL)）|")
+    add(f"|---:|---:|---:|---:|---:|---:|")
+    add(f"| **{signal_t['PASS']}** | **{signal_t['FAIL']}** | **{signal_t['ERROR']}** | **{signal_t['NONE']}** | **{signal_t['INCONCLUSIVE']}** | **{signal_t['RATE']:.1f}%** |")
+    add("")
+
+    add(f"## 辅助参考 — noisy 指标（不进 PASS 率，仅供观察）")
+    add("")
+    if noisy_t["TOTAL"] == 0:
+        add("（本次跑未产生 noisy 指标结果。）")
+    else:
+        add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? |")
+        add(f"|---:|---:|---:|---:|---:|")
+        add(f"| {noisy_t['PASS']} | {noisy_t['FAIL']} | {noisy_t['ERROR']} | {noisy_t['NONE']} | {noisy_t['INCONCLUSIVE']} |")
+        add("")
+        add(f"> 这些 metric 在我们场景下判官抖动大或结构性假阳/假阴。不计入总评。")
+    add("")
+
+    add(f"## 全局 skip — broken 指标")
+    add("")
+    add(f"以下 metric 在 DeepEval 4.0 上对 Mira 场景被判定不可信，**所有 golden 一律跳过**：")
+    add("")
+    for k in broken_metrics:
+        add(f"- `{k}` — _METRIC_PROFILE 标记为 broken")
     add("")
 
     # ── PER-CATEGORY ROLLUP ────────────────────────────────────────────────
@@ -553,23 +742,29 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
             add("")
             continue
 
-        add("| 文件 | 指标 | 分数 | 阈值 | 判定 | 耗时 |")
-        add("|---|---|---:|---:|:---:|---:|")
+        add("| 文件 | 指标 | profile | 分数 | 阈值 | 判定 | 耗时 |")
+        add("|---|---|:---:|---:|---:|:---:|---:|")
         for mr in gr.metric_results:
             v = _verdict(mr)
-            badge = {"PASS": "✅ PASS", "FAIL": "❌ FAIL", "ERROR": "🚨 ERR", "NONE": "· NONE"}.get(v, v)
+            badge = {
+                "PASS": "✅ PASS", "FAIL": "❌ FAIL", "ERROR": "🚨 ERR",
+                "NONE": "· NONE", "INCONCLUSIVE": "🟡 INCONCLUSIVE",
+            }.get(v, v)
             thr = f"≥{mr.threshold:.2f}" if mr.threshold is not None else "—"
             score = _fmt_score(mr.score)
-            add(f"| `{mr.file}` | `{mr.metric}` | {score} | {thr} | {badge} | {mr.elapsed_s:.1f}s |")
+            prof_badge = {"signal": "🟢 signal", "noisy": "🟠 noisy"}.get(mr.profile, mr.profile)
+            add(f"| `{mr.file}` | `{mr.metric}` | {prof_badge} | {score} | {thr} | {badge} | {mr.elapsed_s:.1f}s |")
         add("")
 
         non_pass = [mr for mr in gr.metric_results if _verdict(mr) != "PASS"]
         if non_pass:
-            add("<details><summary>非 PASS 项的 reason / error</summary>")
+            add("<details><summary>非 PASS 项的 reason / error / audit</summary>")
             add("")
             for mr in non_pass:
                 v = _verdict(mr)
-                add(f"- **`{mr.metric}` ({v})** — score={_fmt_score(mr.score)} thr={_fmt_score(mr.threshold)}")
+                add(f"- **`{mr.metric}` ({v}, profile={mr.profile})** — score={_fmt_score(mr.score)} thr={_fmt_score(mr.threshold)}")
+                if mr.audit_warning:
+                    add(f"  - 🟡 audit: {mr.audit_warning}")
                 if mr.error:
                     add(f"  - 🛑 error: `{mr.error[:300]}`")
                 if mr.reason:

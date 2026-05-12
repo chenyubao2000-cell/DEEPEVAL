@@ -176,6 +176,13 @@ td code, th code { background: transparent; padding: 0; font-size: 0.85em; }
 .pill.fail { color: var(--fail); background: var(--fail-bg); }
 .pill.err  { color: var(--err);  background: var(--err-bg);  }
 .pill.none { color: var(--none); background: var(--none-bg); }
+.pill.inconclusive { color: #9a6700; background: #fff8c5; }
+.pill.profile-signal { color: var(--pass); background: var(--pass-bg); }
+.pill.profile-noisy  { color: #b35900; background: #ffe4cc; }
+@media (prefers-color-scheme: dark) {
+  .pill.inconclusive { color: #f0c674; background: #3a2f0a; }
+  .pill.profile-noisy { color: #ffcb96; background: #3b240e; }
+}
 
 /* aggregate badge bar at the top of the report */
 .totals {
@@ -221,16 +228,21 @@ footer {
 # We work on the rendered HTML string because GFM table cells are simple
 # <td>...</td> blocks once converted.
 _VERDICT_PATTERNS = [
-    # exact-match badges inside cells: "✅ PASS" / "❌ FAIL" / "🚨 ERR" / "· NONE"
+    # exact-match badges inside cells: "✅ PASS" / "❌ FAIL" / "🚨 ERR" / "· NONE" / "🟡 INCONCLUSIVE"
     (re.compile(r"✅\s*PASS"), '<span class="pill pass">✅ PASS</span>'),
     (re.compile(r"❌\s*FAIL"), '<span class="pill fail">❌ FAIL</span>'),
     (re.compile(r"🚨\s*ERR"),  '<span class="pill err">🚨 ERR</span>'),
     (re.compile(r"·\s*NONE"),  '<span class="pill none">· NONE</span>'),
+    (re.compile(r"🟡\s*INCONCLUSIVE"), '<span class="pill inconclusive">🟡 INCONCLUSIVE</span>'),
+    # profile badges
+    (re.compile(r"🟢\s*signal"), '<span class="pill profile-signal">🟢 signal</span>'),
+    (re.compile(r"🟠\s*noisy"),  '<span class="pill profile-noisy">🟠 noisy</span>'),
     # bare uppercase verdicts in details bullets: " (PASS)" / " (FAIL)" etc.
     (re.compile(r"\((PASS)\)"), r'(<span class="pill pass">\1</span>)'),
     (re.compile(r"\((FAIL)\)"), r'(<span class="pill fail">\1</span>)'),
     (re.compile(r"\((ERROR)\)"), r'(<span class="pill err">\1</span>)'),
     (re.compile(r"\((NONE)\)"), r'(<span class="pill none">\1</span>)'),
+    (re.compile(r"\((INCONCLUSIVE)\)"), r'(<span class="pill inconclusive">\1</span>)'),
 ]
 
 
