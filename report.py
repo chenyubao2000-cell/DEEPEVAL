@@ -103,33 +103,64 @@ def _metric_label(metric) -> str:
 
 
 def _derive_task_url_base() -> str:
-    """Build a frontend task URL base from MIRA_BFF_URL / overrides.
+    """Build a task / share URL base from MIRA_BFF_URL / overrides.
 
     Priority:
-      1. `MIRA_TASK_URL_BASE` env var (full https://host[/path] root) — wins.
-      2. Heuristic: substitute "bff" → "work" in the BFF host (matches the
-         convention used by Mira's railway preview deployment, where
-         `mira-bff-preview.up.railway.app` BFF pairs with
-         `mira-work-preview.up.railway.app` frontend).
-      3. Fallback: use the BFF host itself (works for unified-domain envs
-         like `mina.ciwork.cn` where BFF and frontend share a host).
-    Returns a base WITHOUT trailing slash. Append "/task/{conv_id}".
+      1. `MIRA_TASK_URL_BASE` env var (full https://host[/path] root).
+      2. `MIRA_BFF_URL` host — Mira's BFF serves both `/api/task` (SSE) and
+         the frontend `/task/{id}` / `/share/{id}` pages on the same host
+         (confirmed against mira-bff-preview.up.railway.app and mina.ciwork.cn).
+    Returns a base WITHOUT trailing slash. Append "/task/{conv_id}" or
+    "/share/{conv_id}?token=…".
     """
     explicit = os.environ.get("MIRA_TASK_URL_BASE", "").strip().rstrip("/")
     if explicit:
         return explicit
-    bff = os.environ.get("MIRA_BFF_URL", "").strip().rstrip("/")
-    if not bff:
-        return ""
-    if "-bff" in bff:
-        return bff.replace("-bff", "-work")
-    return bff
+    return os.environ.get("MIRA_BFF_URL", "").strip().rstrip("/")
 
 
 def _task_url(base: str, conv_id: str) -> str:
     if not base or not conv_id:
         return ""
     return f"{base}/task/{conv_id}"
+
+
+def _ensure_share_url(conv_id: str) -> str | None:
+    """Get a public share URL for this task — viewer permission, no expiry.
+
+    Reuses an existing active viewer share if one is already on the task
+    (avoids spamming the DB with duplicates across re-runs). Falls back to
+    None on any error so the caller can still surface the (login-gated)
+    task URL.
+    """
+    import httpx
+    bff = os.environ.get("MIRA_BFF_URL", "").strip().rstrip("/")
+    tok = os.environ.get("MIRA_SESSION_TOKEN", "")
+    cookie_name = os.environ.get("MIRA_COOKIE_NAME", "__Secure-better-auth.session_token")
+    if not bff or not tok or not conv_id:
+        return None
+    cookies = {cookie_name: tok}
+    try:
+        # Reuse an active viewer share if one already exists for this task.
+        r = httpx.get(f"{bff}/api/tasks/{conv_id}/share", cookies=cookies, timeout=60)
+        if r.status_code == 200:
+            shares = (r.json() or {}).get("shares") or []
+            for s in shares:
+                if s.get("isActive") and s.get("permission") == "viewer" and not s.get("expiresAt"):
+                    return f"{bff}/share/{conv_id}?token={s.get('shareToken')}"
+        # Otherwise create a fresh permanent viewer share.
+        r = httpx.post(
+            f"{bff}/api/tasks/{conv_id}/share",
+            cookies=cookies,
+            json={"chatId": conv_id, "permission": "viewer"},
+            timeout=60,
+        )
+        if r.status_code == 200:
+            url = (r.json() or {}).get("shareUrl")
+            return url or None
+    except Exception:
+        return None
+    return None
 
 
 # ── skip-by-category policy ────────────────────────────────────────────────
@@ -317,6 +348,7 @@ class GoldenResult:
     session_warnings: list[str]
     metric_results: list[MetricResult] = field(default_factory=list)
     drive_error: str | None = None
+    share_url: str | None = None  # public share URL (set in run_one_golden)
 
 
 def _score_one(metric, test_case) -> dict:
@@ -462,12 +494,16 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
     conv_case = build_conversational(golden, turns, session=session)
     llm_cases = explode_to_llm_cases(turns, scenario=scenario)
 
+    share_url = _ensure_share_url(session.conversation_id)
+    if share_url:
+        print(f"     🔗 share: {share_url}")
     out = GoldenResult(
         index=idx, scenario=scenario, tier=golden.get("_tier"),
         category=golden.get("_category"), mira_elapsed_s=mira_elapsed,
         n_user_turns=n_user, n_assistant_turns=n_asst,
         n_tool_calls=len(tool_names), tools_observed=tool_names,
         conv_id=session.conversation_id, session_warnings=list(session.warnings),
+        share_url=share_url,
     )
 
     metric_rows = _collect_metrics()
@@ -556,6 +592,7 @@ def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
                 "tools_observed": gr.tools_observed,
                 "conv_id": gr.conv_id,
                 "task_url": _task_url(meta.get("task_url_base", ""), gr.conv_id),
+                "share_url": gr.share_url,
                 "session_warnings": gr.session_warnings,
                 "drive_error": gr.drive_error,
                 "metrics": [
@@ -762,10 +799,15 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
         ]
         add(" · ".join(meta_bits))
         add("")
-        url = _task_url(url_base, gr.conv_id)
-        if url:
-            add(f"🔗 任务页面：<{url}>")
+        share = (gr.share_url or "").strip()
+        task = _task_url(url_base, gr.conv_id)
+        if share:
+            add(f"🔗 分享链接（公开访问）：<{share}>")
             add("")
+        elif task:
+            add(f"🔗 任务页面（需登录）：<{task}>")
+            add("")
+        url = share or task  # for the non-PASS block below
         if gr.session_warnings:
             add(f"> ⚠ session warnings: `{gr.session_warnings}`")
             add("")
@@ -798,7 +840,8 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
             add("<details><summary>非 PASS 项的 reason / error / audit</summary>")
             add("")
             if url:
-                add(f"🔗 任务页面：<{url}>")
+                label = "分享链接（公开访问）" if share else "任务页面（需登录）"
+                add(f"🔗 {label}：<{url}>")
                 add("")
             for mr in non_pass:
                 v = _verdict(mr)
