@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
@@ -99,6 +100,36 @@ def _metric_label(metric) -> str:
     if cls == "ConversationalGEval":
         return f"GEval/{name}"
     return cls
+
+
+def _derive_task_url_base() -> str:
+    """Build a frontend task URL base from MIRA_BFF_URL / overrides.
+
+    Priority:
+      1. `MIRA_TASK_URL_BASE` env var (full https://host[/path] root) — wins.
+      2. Heuristic: substitute "bff" → "work" in the BFF host (matches the
+         convention used by Mira's railway preview deployment, where
+         `mira-bff-preview.up.railway.app` BFF pairs with
+         `mira-work-preview.up.railway.app` frontend).
+      3. Fallback: use the BFF host itself (works for unified-domain envs
+         like `mina.ciwork.cn` where BFF and frontend share a host).
+    Returns a base WITHOUT trailing slash. Append "/task/{conv_id}".
+    """
+    explicit = os.environ.get("MIRA_TASK_URL_BASE", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    bff = os.environ.get("MIRA_BFF_URL", "").strip().rstrip("/")
+    if not bff:
+        return ""
+    if "-bff" in bff:
+        return bff.replace("-bff", "-work")
+    return bff
+
+
+def _task_url(base: str, conv_id: str) -> str:
+    if not base or not conv_id:
+        return ""
+    return f"{base}/task/{conv_id}"
 
 
 # ── skip-by-category policy ────────────────────────────────────────────────
@@ -524,6 +555,7 @@ def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
                 "n_tool_calls": gr.n_tool_calls,
                 "tools_observed": gr.tools_observed,
                 "conv_id": gr.conv_id,
+                "task_url": _task_url(meta.get("task_url_base", ""), gr.conv_id),
                 "session_warnings": gr.session_warnings,
                 "drive_error": gr.drive_error,
                 "metrics": [
@@ -716,6 +748,7 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     # ── DETAILED PER-GOLDEN BLOCKS ─────────────────────────────────────────
     add(f"## 每条用例详情")
     add("")
+    url_base = meta.get("task_url_base") or ""
     for gr in results:
         add(f"### [{gr.index}] {gr.scenario}")
         add("")
@@ -729,6 +762,10 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
         ]
         add(" · ".join(meta_bits))
         add("")
+        url = _task_url(url_base, gr.conv_id)
+        if url:
+            add(f"🔗 任务页面：<{url}>")
+            add("")
         if gr.session_warnings:
             add(f"> ⚠ session warnings: `{gr.session_warnings}`")
             add("")
@@ -760,6 +797,9 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
         if non_pass:
             add("<details><summary>非 PASS 项的 reason / error / audit</summary>")
             add("")
+            if url:
+                add(f"🔗 任务页面：<{url}>")
+                add("")
             for mr in non_pass:
                 v = _verdict(mr)
                 add(f"- **`{mr.metric}` ({v}, profile={mr.profile})** — score={_fmt_score(mr.score)} thr={_fmt_score(mr.threshold)}")
@@ -797,7 +837,6 @@ def _install_registry(env: str) -> tuple[int, str]:
 
 
 def main() -> None:
-    import os
     ap = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=__doc__)
     ap.add_argument("--env", help="environment name (default: $MIRA_ENV or 'preview'); selects .env.<name>")
     ap.add_argument("--category", help="comma-separated _category filter (e.g. crm,voice)")
@@ -867,6 +906,7 @@ def main() -> None:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "env": env,
         "bff_url": os.environ.get("MIRA_BFF_URL", ""),
+        "task_url_base": _derive_task_url_base(),
         "langfuse_host": os.environ.get("LANGFUSE_HOST", ""),
         "n_available_tools": n_tools,
         "tools_source": tools_source,
