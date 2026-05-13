@@ -57,10 +57,14 @@ def load_env(name: str | None = None) -> str:
     env_file = ROOT / f".env.{name}"
     legacy = ROOT / ".env"
 
+    # override=True so `.env.<name>` actually wins. Without it, a plain `.env`
+    # (or stale process env vars from a prior `--env preview` run in the same
+    # shell) would silently keep their values and the "switch" never happens.
+    # Investigated 2026-05-13 after `--env mina` ran entirely on preview BFF.
     if env_file.exists():
-        load_dotenv(env_file, override=False)
+        load_dotenv(env_file, override=True)
     elif legacy.exists():
-        load_dotenv(legacy, override=False)
+        load_dotenv(legacy, override=True)
     else:
         raise FileNotFoundError(
             f"No env file found: tried {env_file} and {legacy}"

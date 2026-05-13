@@ -46,17 +46,40 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 import httpx
-from dotenv import load_dotenv
+
+# Env values are read at CALL time (inside MiraSession methods / module helpers
+# below), NOT at import time. This is intentional: `_env.load_env(name)` is
+# the authoritative loader, and it may run AFTER mira_client is imported. If we
+# captured BFF_URL etc. as module globals at import, a later `--env mina` would
+# silently keep using whatever was in plain `.env` (preview values). See the
+# bug investigated 2026-05-13.
+#
+# Defaults are kept low to fail fast if `_env.load_env` was never called.
 
 
-load_dotenv(Path(__file__).parent / ".env")
+def _bff_url() -> str:
+    return os.environ.get("MIRA_BFF_URL", "").rstrip("/")
 
-BFF_URL = os.environ.get("MIRA_BFF_URL", "https://mira-bff-preview.up.railway.app").rstrip("/")
-SESSION_TOKEN = os.environ["MIRA_SESSION_TOKEN"]
-COOKIE_NAME = os.environ.get("MIRA_COOKIE_NAME", "__Secure-better-auth.session_token")
-REQUEST_TIMEOUT_S = int(os.environ.get("MIRA_TIMEOUT_S", "1800"))
-UPLOAD_TIMEOUT_S = int(os.environ.get("MIRA_UPLOAD_TIMEOUT_S", "300"))
-MAX_APPROVAL_ROUNDS = int(os.environ.get("MIRA_MAX_APPROVAL_ROUNDS", "8"))
+
+def _session_token() -> str:
+    # KeyError on missing keeps the old fail-loud behaviour
+    return os.environ["MIRA_SESSION_TOKEN"]
+
+
+def _cookie_name() -> str:
+    return os.environ.get("MIRA_COOKIE_NAME", "__Secure-better-auth.session_token")
+
+
+def _request_timeout_s() -> int:
+    return int(os.environ.get("MIRA_TIMEOUT_S", "1800"))
+
+
+def _upload_timeout_s() -> int:
+    return int(os.environ.get("MIRA_UPLOAD_TIMEOUT_S", "300"))
+
+
+def _max_approval_rounds() -> int:
+    return int(os.environ.get("MIRA_MAX_APPROVAL_ROUNDS", "8"))
 
 # Tools that block on HITL by emitting an input-available state and no execute()
 # in the AI SDK tool registration. Frontend resolves by calling
@@ -297,7 +320,7 @@ class MiraSession:
         size = p.stat().st_size
 
         headers = {"Content-Type": "application/json"}
-        cookies = {COOKIE_NAME: SESSION_TOKEN}
+        cookies = {_cookie_name(): _session_token()}
         body = {
             "fileName": safe_name,
             "contentType": content_type,
@@ -305,8 +328,8 @@ class MiraSession:
             "fileSize": size,
         }
 
-        with httpx.Client(timeout=httpx.Timeout(UPLOAD_TIMEOUT_S)) as client:
-            sign = client.post(f"{BFF_URL}/api/files/upload", json=body, headers=headers, cookies=cookies)
+        with httpx.Client(timeout=httpx.Timeout(_upload_timeout_s())) as client:
+            sign = client.post(f"{_bff_url()}/api/files/upload", json=body, headers=headers, cookies=cookies)
             if sign.status_code != 200:
                 raise MiraError(f"sign upload failed ({sign.status_code}): {sign.text[:300]}")
             signed = sign.json()
@@ -387,7 +410,8 @@ class MiraSession:
 
         if auto_approve and result.message_id:
             hit_cap = False
-            while approval_rounds < MAX_APPROVAL_ROUNDS:
+            max_rounds = _max_approval_rounds()
+            while approval_rounds < max_rounds:
                 pending = self._collect_pending_gates(merged_tool_calls)
                 if not pending:
                     break
@@ -426,7 +450,7 @@ class MiraSession:
                 hit_cap = True
             if hit_cap:
                 self.warnings.append(
-                    f"hit MAX_APPROVAL_ROUNDS={MAX_APPROVAL_ROUNDS}; remaining gates abandoned"
+                    f"hit MAX_APPROVAL_ROUNDS={max_rounds}; remaining gates abandoned"
                 )
 
         text = merged_text.strip() or "[empty assistant response]"
@@ -528,15 +552,16 @@ class MiraSession:
 
     def _stream_task(self, payload: dict) -> AssistantStreamResult:
         headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
-        cookies = {COOKIE_NAME: SESSION_TOKEN}
+        cookies = {_cookie_name(): _session_token()}
+        timeout_s = _request_timeout_s()
         try:
             with httpx.stream(
                 "POST",
-                f"{BFF_URL}/api/task",
+                f"{_bff_url()}/api/task",
                 json=payload,
                 headers=headers,
                 cookies=cookies,
-                timeout=httpx.Timeout(REQUEST_TIMEOUT_S, read=REQUEST_TIMEOUT_S),
+                timeout=httpx.Timeout(timeout_s, read=timeout_s),
             ) as r:
                 if r.status_code != 200:
                     body = r.read().decode(errors="replace")[:500]
