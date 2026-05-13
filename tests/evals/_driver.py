@@ -286,8 +286,9 @@ def build_conversational(
     """Wrap turns in a ConversationalTestCase using golden metadata.
 
     If `session` is provided, stash session.warnings and any tool-error markers
-    into `test_case.metadata`. RunCompletionMetric reads these to do mechanical
-    health checks without firing an LLM judge. Other metrics ignore metadata.
+    into `test_case.metadata`. SessionHealthMetric's `client` layer reads these
+    to do mechanical health checks without firing an LLM judge. Other metrics
+    ignore metadata.
 
     If the golden lists `_acceptable_paths`, append them to expected_outcome so
     every text-based metric (Completeness / Deliverable / Professional / Goal /

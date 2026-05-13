@@ -36,6 +36,7 @@ from tests.evals._driver import (
     load_goldens,
 )
 from tests.evals._langfuse_tools import available_tool_registry
+from tests.evals._metrics_config import filter_active, is_active, is_file_active
 
 
 judge = ClaudeCliJudge()
@@ -78,7 +79,7 @@ RELEVANT_TOPICS = [
 
 # --- Multi-turn metrics -------------------------------------------------------
 
-MULTI_TURN_METRICS = [
+MULTI_TURN_METRICS = filter_active([
     ToolUseMetric(
         available_tools=AVAILABLE_TOOLS,
         threshold=0.5,
@@ -91,7 +92,7 @@ MULTI_TURN_METRICS = [
         model=judge,
         async_mode=False,
     ),
-]
+])
 
 
 # --- Per-turn metric ----------------------------------------------------------
@@ -99,6 +100,21 @@ MULTI_TURN_METRICS = [
 ARG_CORRECTNESS = ArgumentCorrectnessMetric(
     threshold=0.5, model=judge, async_mode=False,
 )
+_ARG_CORRECTNESS_ACTIVE = is_active(ARG_CORRECTNESS)
+
+
+# Module-level skip: applies to BOTH parametrized tests below. Triggers when
+# either (a) this file isn't in ACTIVE_FILES, or (b) neither MULTI_TURN_METRICS
+# nor ARG_CORRECTNESS is enabled — i.e. nothing in this file would actually run.
+def _skip_reason() -> str | None:
+    if not is_file_active(__file__):
+        return "test_mira_tooluse.py not in ACTIVE_FILES (tests/evals/_metrics_config.py)"
+    if not MULTI_TURN_METRICS and not _ARG_CORRECTNESS_ACTIVE:
+        return "no active tool-use metrics (tests/evals/_metrics_config.py)"
+    return None
+
+
+pytestmark = pytest.mark.skipif(_skip_reason() is not None, reason=_skip_reason() or "")
 
 
 def _patch_tooluse_metrics_in_place(registry: dict[str, dict]) -> int:
@@ -121,6 +137,10 @@ def _patch_tooluse_metrics_in_place(registry: dict[str, dict]) -> int:
     return len(new_tools)
 
 
+@pytest.mark.skipif(
+    not MULTI_TURN_METRICS,
+    reason="ToolUseMetric / TopicAdherenceMetric not in ACTIVE_METRICS",
+)
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)
 def test_mira_tool_use_multiturn(golden: dict):
     _session, turns = drive_mira(golden)
@@ -128,6 +148,10 @@ def test_mira_tool_use_multiturn(golden: dict):
     assert_test(test_case=test_case, metrics=MULTI_TURN_METRICS)
 
 
+@pytest.mark.skipif(
+    not _ARG_CORRECTNESS_ACTIVE,
+    reason="ArgumentCorrectnessMetric not in ACTIVE_METRICS",
+)
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)
 def test_mira_argument_correctness(golden: dict):
     """ArgumentCorrectness on each assistant turn that actually called tools.

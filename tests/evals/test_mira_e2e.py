@@ -30,17 +30,20 @@ from tests.evals._driver import (
     golden_id,
     load_goldens,
 )
+from tests.evals._metrics_config import filter_active, make_skip_mark
 
 
 judge = ClaudeCliJudge()
 
-METRICS = [
+METRICS = filter_active([
     ConversationCompletenessMetric(threshold=0.5, model=judge, async_mode=False),
     TurnRelevancyMetric(threshold=0.5, model=judge, async_mode=False),
     KnowledgeRetentionMetric(threshold=0.5, model=judge, async_mode=False),
     RoleAdherenceMetric(threshold=0.7, model=judge, async_mode=False),
     GoalAccuracyMetric(threshold=0.5, model=judge, async_mode=False),
-]
+])
+
+pytestmark = make_skip_mark(__file__, METRICS)
 
 
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)

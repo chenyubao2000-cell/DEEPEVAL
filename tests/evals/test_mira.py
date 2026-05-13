@@ -32,6 +32,7 @@ from deepeval.test_case.conversational_test_case import MultiTurnParams
 
 from claude_cli_judge import ClaudeCliJudge
 from mira_client import MiraSession
+from tests.evals._metrics_config import filter_active, make_skip_mark
 
 
 DATASET_PATH = Path(__file__).parent / ".dataset.json"
@@ -51,7 +52,7 @@ def _load_goldens() -> list[dict]:
 judge = ClaudeCliJudge()
 
 
-END_TO_END_METRICS = [
+END_TO_END_METRICS = filter_active([
     RoleAdherenceMetric(threshold=0.7, model=judge, async_mode=False),
     ConversationCompletenessMetric(threshold=0.5, model=judge, async_mode=False),
     GoalAccuracyMetric(threshold=0.5, model=judge, async_mode=False),
@@ -96,7 +97,9 @@ END_TO_END_METRICS = [
         model=judge,
         async_mode=False,
     ),
-]
+])
+
+pytestmark = make_skip_mark(__file__, END_TO_END_METRICS)
 
 
 def _drive_mira(golden: dict) -> ConversationalTestCase:

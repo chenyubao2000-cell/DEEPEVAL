@@ -1,8 +1,8 @@
 """Postgres helper for metrics that verify Mira's persisted state.
 
-Currently only ``DatabaseStatusMetric`` uses this; it checks that user/
-assistant messages are properly paired and each assistant turn's final
-``parts[-1]`` is in a valid terminal state.
+Currently only ``SessionHealthMetric``'s persistence layer uses this; it
+checks that user/assistant messages are properly paired and each assistant
+turn's final ``parts[-1]`` is in a valid terminal state.
 
 Reads ``TEST_DATABASE_URL`` from the loaded ``.env`` file. Lazy + cached
 connection — same pattern as the Langfuse client.

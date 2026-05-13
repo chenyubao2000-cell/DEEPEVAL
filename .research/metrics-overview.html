@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DeepEval 指标全景图 — Mira 项目</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --gray: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    padding: 32px 24px 64px;
+    line-height: 1.55;
+  }
+  .container { max-width: 1280px; margin: 0 auto; }
+  h1 { margin: 0 0 8px; font-size: 28px; color: #fff; }
+  h2 {
+    margin: 40px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 20px;
+    color: #fff;
+  }
+  h3 { margin: 24px 0 8px; font-size: 16px; color: var(--accent); }
+  .subtitle { color: var(--muted); margin-bottom: 20px; font-size: 14px; }
+  .legend {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 20px 0 24px;
+    font-size: 13px;
+  }
+  .legend-row { margin: 4px 0; }
+  .legend strong { color: #fff; }
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 16px 0 24px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    flex: 1 1 180px;
+  }
+  .stat-card .num {
+    font-size: 26px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .stat-card .label { font-size: 12px; color: var(--muted); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 18px;
+    font-size: 13.5px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    background: var(--panel-2);
+    color: #fff;
+    font-weight: 600;
+    font-size: 12.5px;
+    letter-spacing: 0.3px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(88, 166, 255, 0.04); }
+  td.name {
+    font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+    color: #fff;
+    white-space: nowrap;
+    font-size: 12.8px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .p0 { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+  .p1 { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.4); }
+  .p2 { background: rgba(88,166,255,0.15); color: var(--accent); border: 1px solid rgba(88,166,255,0.4); }
+  .p3 { background: rgba(139,148,158,0.15); color: var(--muted); border: 1px solid rgba(139,148,158,0.4); }
+  .status-on { color: var(--green); font-weight: 600; }
+  .status-info { color: var(--accent); font-weight: 600; }
+  .status-off { color: var(--gray); }
+  .status-na { color: var(--muted); font-style: italic; }
+  code {
+    background: #0b0f14;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 12px;
+    color: var(--purple);
+  }
+  td.detail { color: var(--text); }
+  td.detail .why { color: var(--muted); font-size: 12.5px; display: block; margin-top: 4px; }
+  td.where { font-size: 12px; color: var(--muted); font-family: "SFMono-Regular", Consolas, Menlo, monospace; }
+  .section-note {
+    background: rgba(88,166,255,0.06);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 8px 0 14px;
+    font-size: 13px;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  .section-note.warn {
+    background: rgba(210,153,34,0.06);
+    border-left-color: var(--yellow);
+  }
+  .section-note.gray {
+    background: rgba(110,118,129,0.07);
+    border-left-color: var(--gray);
+  }
+  .toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    columns: 2;
+    column-gap: 32px;
+  }
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 13px;
+    display: block;
+    padding: 3px 0;
+  }
+  .toc a:hover { text-decoration: underline; }
+  .footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>DeepEval 指标全景图 — Mira 项目</h1>
+<div class="subtitle">
+  当前实现的评测指标清单 + DeepEval 官方完整指标集合 · 已按使用状态、类别、优先级整理。<br>
+  数据源：<code>tests/evals/test_mira_*.py</code>、<code>custom_metrics/</code>、<code>.research/deepeval-metrics-guide.md</code>。
+</div>
+
+<div class="legend">
+  <div class="legend-row"><strong>优先级</strong>：
+    <span class="badge p0">P0 核心</span> 当前作为门禁（gate）使用，失败即视为问题 ·
+    <span class="badge p1">P1 重要</span> 当前已采集或建议尽快采集 ·
+    <span class="badge p2">P2 可选</span> 视场景启用，需要额外字段或 ground truth ·
+    <span class="badge p3">P3 不适用</span> 当前架构不支持或与业务无关
+  </div>
+  <div class="legend-row"><strong>使用状态</strong>：
+    <span class="status-on">● 在用 (gate)</span> ·
+    <span class="status-info">● 在用 (info-only)</span> ·
+    <span class="status-off">○ 未启用</span> ·
+    <span class="status-na">✕ 不适用</span>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat-card"><div class="num">23</div><div class="label">当前在用的指标</div></div>
+  <div class="stat-card"><div class="num">15</div><div class="label">DeepEval 内建（在用）</div></div>
+  <div class="stat-card"><div class="num">8</div><div class="label">本仓自建 Ops（在用）</div></div>
+  <div class="stat-card"><div class="num">31</div><div class="label">尚未启用 / 不适用</div></div>
+</div>
+
+<div class="legend" style="border-color: var(--green);">
+  <strong style="color: var(--green);">★ 2026-05-13 重构</strong>：
+  原 <code>RunCompletionMetric</code> + <code>CompletedMetric</code> + <code>DatabaseStatusMetric</code> 三个
+  独立指标已合并为 <code>SessionHealthMetric</code>（在 A 区第一行）。
+  三者本质都是 "session 是否完成干净"，只是检查层不同（client / trace / persistence）；
+  合并后一次 measure 跑全部三层，<code>.reason</code> 多行展示每层结果，单一 PASS/FAIL 结论更清晰。
+</div>
+
+<h2>目录</h2>
+<div class="toc">
+  <a href="#sec-ops">A. 运行健康 / Ops（在用）</a>
+  <a href="#sec-singleturn">B. 单轮内容质量（在用）</a>
+  <a href="#sec-multiturn">C. 多轮对话质量（在用）</a>
+  <a href="#sec-safety">D. 安全合规（在用）</a>
+  <a href="#sec-tool">E. 工具调用（在用）</a>
+  <a href="#sec-custom-active">F. 自定义维度 GEval（在用）</a>
+  <a href="#sec-rag">G. RAG 检索（未启用）</a>
+  <a href="#sec-content">H. 内容质量（未启用）</a>
+  <a href="#sec-struct">I. 结构化校验（未启用）</a>
+  <a href="#sec-custom-off">J. 自定义 / 组合（未启用）</a>
+  <a href="#sec-trace">K. Trace 类（不适用）</a>
+  <a href="#sec-mcp">L. MCP 类（不适用）</a>
+  <a href="#sec-mm">M. 多模态（不适用）</a>
+  <a href="#sec-arena">N. 对比型（不适用）</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec-ops">A. 运行健康 / Ops（8 件套，全部在用）</h2>
+<div class="section-note">
+  这一组属于 <code>custom_metrics/</code>，是从旧 <code>Mira_Validation</code> 移植 + 项目内自建的运营信号。
+  评分多为原始数值（tokens / USD / 秒），不是 0-1，靠 <code>BaseValueMetric.informational</code> 切换 gate 或 info-only 行为。
+  8 个里 7 个是确定性查询（Langfuse/PG），仅 <code>ToolDependencyMetric</code> 调 LLM judge。
+</div>
+
+<table>
+<thead><tr>
+  <th style="width:170px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 适用场景</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">SessionHealthMetric ★</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, =1.0)</td>
+  <td class="detail">
+    <strong>统一的"session 是否完成干净"门禁</strong>，三层独立检查全跑（不短路）：
+    <ul style="margin:6px 0 4px 16px;padding:0;">
+      <li><strong>client</strong> — 内存 MiraSession 信号：<code>stream_truncated</code> 警告 / 工具 <code>status==error</code> / 空 assistant turn（旧 RunCompletionMetric 的逻辑）。无网络调用。</li>
+      <li><strong>trace</strong> — Langfuse trace：至少 1 个 trace 有 <code>end_time</code> 或 <code>mira-agent</code> observation 完成；<code>level == DEFAULT</code>；最后 assistant turn 内容非空（旧 CompletedMetric 的逻辑）。</li>
+      <li><strong>persistence</strong> — Mira Postgres <code>messages</code> 表：user/assistant 严格成对；每条 assistant <code>parts[-1]</code> 处于合法终止态；所有 part 状态合规（旧 DatabaseStatusMetric 的逻辑）。<code>metadata.aborted=true</code> 跳过。</li>
+    </ul>
+    score 是 binary 1.0/0.0：所有非 skipped 层都 pass 才 1.0。<code>.reason</code> 是多行结构化诊断（每层一行 ✓/✗/🚨/•），方便报告里一眼看出"挂在哪一层"。
+    Langfuse / PG 拿不到 → 该层 <code>status="error"</code>（报告高亮 🚨）+ 总分 FAIL（"无法验证"也算不过）。
+    <span class="why">用途：执行层 + observability 层 + 持久化层三道防线一次过；当此 metric fail 时，下游所有 quality metric 都不可信。</span>
+  </td>
+  <td class="where">custom_metrics/status_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">NTurnsMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≤30)</td>
+  <td class="detail">
+    统计最后一次 <code>doStream</code> observation 的 <code>input.messages</code> 里 <code>role==user</code> 的条数，越界即 fail。
+    <span class="why">用途：防 Mira 进入 runaway 对话循环（曾因 tool retry 把上下文打到 100+ turns）。</span>
+  </td>
+  <td class="where">custom_metrics/perf_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">ToolDependencyMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.80)</td>
+  <td class="detail">
+    抽出工具调用序列 → 加载 <code>tool-dependencies.json</code> 的约束 catalog → claude CLI 判 violation → <code>score = (totalSteps − violatingSteps) / totalSteps</code>。0 tool call 或 0 violation 直接 1.0（lenient）。
+    <span class="why">用途：检查工具调用是否违反业务约束（例如 "先 search 再 send_email"），唯一一个调 LLM 的 ops 指标。</span>
+  </td>
+  <td class="where">custom_metrics/path_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">TokensMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-info">● 在用 (info-only)</td>
+  <td class="detail">
+    跨 session 累加 <code>trace.usage</code> 的 input+output。
+    <span class="why">用途：token 趋势监控；曾因 CRM 用例普遍 1M+ tokens 导致硬阈值假阳，已改 informational。</span>
+  </td>
+  <td class="where">custom_metrics/usage_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">SessionCostMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-info">● 在用 (info-only)</td>
+  <td class="detail">
+    4 段优先级回退取 USD：<code>totalCost</code> → <code>calculatedTotalCost</code> → <code>cost</code> → observations 累加。
+    <span class="why">用途：单 session 成本飘动监控，配合 token 数一起看。</span>
+  </td>
+  <td class="where">custom_metrics/usage_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">TimeToFirstTokenMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-info">● 在用 (info-only)</td>
+  <td class="detail">
+    跨 LLM generation 取 <code>min(timeToFirstToken)</code>。
+    <span class="why">用途：首 token 延迟监控，前端体感受其直接影响。</span>
+  </td>
+  <td class="where">custom_metrics/perf_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">SessionDurationMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-info">● 在用 (info-only)</td>
+  <td class="detail">
+    跨 trace + observations <code>max(endTime) − min(startTime)</code>，墙钟时长。
+    <span class="why">用途：整个 session 的端到端耗时，便于回归。</span>
+  </td>
+  <td class="where">custom_metrics/perf_metrics.py<br>test_mira_ops.py</td>
+</tr>
+<tr>
+  <td class="name">OutputTokensPerSecMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-info">● 在用 (info-only)</td>
+  <td class="detail">
+    <code>Σ output_tokens / duration</code>，唯一 higher_is_better=True 的 Ops 指标。
+    <span class="why">用途：流式吞吐率，模型/上游切换时回归对比。</span>
+  </td>
+  <td class="where">custom_metrics/perf_metrics.py<br>test_mira_ops.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-singleturn">B. 单轮内容质量 — 在用</h2>
+<table>
+<thead><tr>
+  <th style="width:170px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 适用场景</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">AnswerRelevancyMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    把 <code>actual_output</code> 拆 statement，逐条判是否回应 <code>input</code>，"相关数 / 总数"。
+    <span class="why">用途：单轮"答非所问"筛查，最基础的内容相关性指标。</span>
+  </td>
+  <td class="where">test_mira_others.py</td>
+</tr>
+<tr>
+  <td class="name">PromptAlignmentMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    逐条 <code>prompt_instructions</code> 检查 <code>actual_output</code> 是否遵守，符合占比。Mira 注册了 5 条人工蒸馏指令（专业语气、不瞎编、要交付物等）。
+    <span class="why">用途：把系统提示词关键约束转成可量化检查，绕开"读不到真实 system prompt"的限制。</span>
+  </td>
+  <td class="where">test_mira_others.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-multiturn">C. 多轮对话质量 — 在用</h2>
+<div class="section-note">
+  Mira 的多轮场景由 <code>ConversationalTestCase(turns=[Turn(role,content,...)])</code> 驱动；
+  这一组指标全部基于 <code>BaseConversationalMetric</code>，是当前评测的主力。
+</div>
+<table>
+<thead><tr>
+  <th style="width:170px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 适用场景</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">GoalAccuracyMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    多轮综合：目标是否达成 + plan 分，求平均。读 <code>scenario / expected_outcome</code>。
+    <span class="why">用途：整段对话是否完成用户目标，最贴近用户体感。</span>
+  </td>
+  <td class="where">test_mira.py / test_mira_e2e.py</td>
+</tr>
+<tr>
+  <td class="name">RoleAdherenceMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    检测 assistant 是否符合 <code>chatbot_role</code> 人设（"Mira, a professional workplace AI agent."）。
+    <span class="why">用途：多轮人设是否稳定，避免漂出"招聘助理"定位。</span>
+  </td>
+  <td class="where">test_mira.py / test_mira_e2e.py</td>
+</tr>
+<tr>
+  <td class="name">ConversationCompletenessMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    抽用户意图清单 → 判对话是否每条意图都被满足。<code>window_size=3</code>。
+    <span class="why">用途：用户多个诉求是否一个都没漏。</span>
+  </td>
+  <td class="where">test_mira.py / test_mira_e2e.py</td>
+</tr>
+<tr>
+  <td class="name">TurnRelevancyMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    滑窗判每个 assistant turn 与上下文的相关性。<code>window_size=10</code>。
+    <span class="why">用途：每一轮是否切题，对长对话比 AnswerRelevancy 更合适。</span>
+  </td>
+  <td class="where">test_mira_e2e.py</td>
+</tr>
+<tr>
+  <td class="name">KnowledgeRetentionMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    逐 turn 检查 assistant 是否记住前文用户给的信息（公司名、JD 要求、人选偏好等）。
+    <span class="why">用途：长对话记忆稳定性，是 Mira 当前已知短板的核心信号。</span>
+  </td>
+  <td class="where">test_mira_e2e.py</td>
+</tr>
+<tr>
+  <td class="name">TopicAdherenceMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    TP/TN/FP/FN 混淆矩阵判对话是否偏离预设主题。Mira 注册了 10 个 topic（招聘、市场研究、文档生成、CRM、voice、email、calendar 等）。
+    <span class="why">用途：跨业务 category（CRM / voice / ci_email / ci_dingding）防主题跑偏，2026-05-11 扩充 topics 后修正了 false-negative。</span>
+  </td>
+  <td class="where">test_mira_tooluse.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-safety">D. 安全合规 — 在用</h2>
+<table>
+<thead><tr>
+  <th style="width:170px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 适用场景</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">PIILeakageMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    检测响应是否含个人身份信息（姓名/手机/身份证/邮箱等）。
+    <span class="why">用途：招聘场景 PII 极敏感，候选人/客户隐私必须把关。</span>
+  </td>
+  <td class="where">test_mira_safety.py</td>
+</tr>
+<tr>
+  <td class="name">RoleViolationMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    二值打分：偏离 <code>role</code> 即 0。当前 role = "Mira, a professional workplace AI agent."。
+    <span class="why">用途：单轮角色硬检测，与 RoleAdherence（多轮）互补。</span>
+  </td>
+  <td class="where">test_mira_safety.py</td>
+</tr>
+<tr>
+  <td class="name">BiasMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    抽 <code>actual_output</code> 中观点，判是否含性别/种族/政治倾向偏见，偏见比例越低分越高。
+    <span class="why">用途：招聘场景下歧视风险高发，必须监控。</span>
+  </td>
+  <td class="where">test_mira_safety.py</td>
+</tr>
+<tr>
+  <td class="name">ToxicityMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.7)</td>
+  <td class="detail">
+    同 Bias 结构，判是否含有毒 / 仇恨 / 骚扰内容。
+    <span class="why">用途：兜底有害内容筛查。</span>
+  </td>
+  <td class="where">test_mira_safety.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-tool">E. 工具调用 — 在用</h2>
+<table>
+<thead><tr>
+  <th style="width:170px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 适用场景</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">ToolUseMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    多轮版：每个 user-assistant 交互判工具选择 + 参数正确性，取最小。<code>available_tools</code> 从 Langfuse 缓存动态注入。
+    <span class="why">用途：Mira 多轮链路的工具调用整体质量，是工具类指标的主力。</span>
+  </td>
+  <td class="where">test_mira_tooluse.py</td>
+</tr>
+<tr>
+  <td class="name">ArgumentCorrectnessMetric</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (gate, ≥0.5)</td>
+  <td class="detail">
+    单轮逐 tool call 判参数是否符合 <code>input</code> 语义，正确占比。
+    <span class="why">用途：检测工具入参对不对，无需 ground truth；和 ToolUse 互补，一个看选择一个看参数。</span>
+  </td>
+  <td class="where">test_mira_tooluse.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-custom-active">F. 自定义维度 ConversationalGEval — 在用</h2>
+<div class="section-note">
+  ConversationalGEval 是当前自定义评测的主力武器：业务想测什么，写 criteria/evaluation_steps，
+  指定 evaluation_params（必须在 <code>CONVERSATIONAL_G_EVAL_PARAMS</code> 允许的 8 个 key 内）。
+</div>
+<table>
+<thead><tr>
+  <th style="width:230px">实例</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">出处</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">ConversationalGEval<br>(ProfessionalNoFabrication)</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (≥0.7)</td>
+  <td class="detail">
+    专业语气 + 不瞎编 + 不暴露 LLM 内部机制（如"我没有跨会话记忆"）+ 用户含糊时主动追问。
+    <span class="why">用途：工作场景下的人设 + 反幻觉，是 Mira 区别于通用 chatbot 的核心维度。</span>
+  </td>
+  <td class="where">test_mira.py / test_mira_custom.py</td>
+</tr>
+<tr>
+  <td class="name">ConversationalGEval<br>(DeliverableMatchesRequest)</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (≥0.6)</td>
+  <td class="detail">
+    判用户提到的每一个可交付物（PPT/Excel/PDF/图片/N 人候选清单/分析报告）是否真被产出。仅口头描述算中分；忽略或替换无关内容低分；无法访问数据源时必须显式说明。
+    <span class="why">用途：Mira 是"产出导向"的 agent，最容易出"光说不练"问题。</span>
+  </td>
+  <td class="where">test_mira.py / test_mira_custom.py</td>
+</tr>
+<tr>
+  <td class="name">ConversationalGEval<br>(GroundedNoFabrication)</td>
+  <td><span class="badge p0">P0 核心</span></td>
+  <td class="status-on">● 在用 (≥0.6)</td>
+  <td class="detail">
+    每条事实声明（公司名/人名/统计数据/薪资/URL/日期/市场规模）必须有引用 OR 显式数据局限声明。模糊通用建议可；自信地编造具体数字 → 低分。
+    <span class="why">用途：把"反幻觉"做成可量化指标，比 PromptAlignment 里的"不要瞎编"细得多。</span>
+  </td>
+  <td class="where">test_mira_custom.py</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-rag">G. RAG 检索质量 — 未启用（缺 retrieval_context）</h2>
+<div class="section-note warn">
+  这一族全部需要 <code>retrieval_context</code> 字段（或多轮版的 <code>turns[*].retrieval_context</code>）。
+  Mira 目前 TS 后端没把检索结果（向量库片段、知识库匹配）通过 SSE/API 透出来。
+  <strong>启用前置工作</strong>：在 Mira BFF 流式协议里加 <code>retrieval</code> 事件，<code>_driver.py</code> 解析后塞到 Turn 上。
+</div>
+<table>
+<thead><tr>
+  <th style="width:230px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">缺什么</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">FaithfulnessMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    从 retrieval_context 抽 truths，从 actual_output 抽 claims，逐条判 claim 是否被 truth 支持。
+    <span class="why">用途：RAG 链路最重要的反幻觉指标，等检索结果暴露后强烈建议启用。</span>
+  </td>
+  <td class="where">retrieval_context</td>
+</tr>
+<tr>
+  <td class="name">ContextualRecallMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">把 expected_output 拆句，判每句是否被 retrieval_context 支持。<br><span class="why">用途：检索是否覆盖理想答案。</span></td>
+  <td class="where">retrieval_context, expected_output</td>
+</tr>
+<tr>
+  <td class="name">ContextualRelevancyMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">对每段 retrieval_context，判其内容是否与 input 相关。<br><span class="why">用途：检索结果与查询的相关性。</span></td>
+  <td class="where">retrieval_context</td>
+</tr>
+<tr>
+  <td class="name">ContextualPrecisionMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">加权精确率@k：top-k 中支持 expected_output 的密度。<br><span class="why">用途：检索排序质量。</span></td>
+  <td class="where">retrieval_context, expected_output</td>
+</tr>
+<tr>
+  <td class="name">TurnFaithfulnessMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">多轮版 Faithfulness。<br><span class="why">用途：长对话 RAG 忠实度。</span></td>
+  <td class="where">turns[*].retrieval_context</td>
+</tr>
+<tr>
+  <td class="name">TurnContextualRecallMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">多轮版 ContextualRecall。</td>
+  <td class="where">turns[*].retrieval_context</td>
+</tr>
+<tr>
+  <td class="name">TurnContextualRelevancyMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">多轮版 ContextualRelevancy。</td>
+  <td class="where">turns[*].retrieval_context</td>
+</tr>
+<tr>
+  <td class="name">TurnContextualPrecisionMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">多轮版 ContextualPrecision。</td>
+  <td class="where">turns[*].retrieval_context</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-content">H. 内容质量补充指标 — 未启用</h2>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">HallucinationMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    对比 <code>actual_output</code> 与 <code>context</code>（必填）的每条陈述，矛盾比例越低分越高。
+    <span class="why">用途：与 GroundedNoFabrication 类似但更结构化；如果业务能提供"参考真理集"建议启用，否则 GroundedNoFabrication 已经覆盖大部分场景。</span>
+  </td>
+  <td class="where">需要 context 字段</td>
+</tr>
+<tr>
+  <td class="name">MisuseMetric</td>
+  <td><span class="badge p1">P1 重要</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    检测 domain 相关滥用（越权 / 越界）。Mira 可设 <code>domain="hiring assistant"</code>。
+    <span class="why">用途：业务边界明确，启用成本只有"加一个 domain 字符串"，建议尽快上线。</span>
+  </td>
+  <td class="where">只需 domain 参数</td>
+</tr>
+<tr>
+  <td class="name">SummarizationMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 业务无摘要</td>
+  <td class="detail">裁判生成评估问题，对比原文与摘要的覆盖度+一致性。<br><span class="why">Mira 18 条 golden 都不是摘要任务。</span></td>
+  <td class="where">需长输入文档</td>
+</tr>
+<tr>
+  <td class="name">NonAdviceMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 业务无金融/医疗</td>
+  <td class="detail">检测是否给出指定类型建议（金融/医疗/法律）。<br><span class="why">Mira 招聘场景几乎不碰受监管建议，可跳过。</span></td>
+  <td class="where">advice_types（必填）</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-struct">I. 结构化输出校验 — 未启用</h2>
+<div class="section-note gray">Mira 输出是自由文本（dashboards、文档、对话），目前没有"必须返回固定 JSON schema"的接口形态。如未来出现结构化输出协议（例如内部 API agent 模式），再启用。</div>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">ExactMatchMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">逐字符比对，1/0。<br><span class="why">用途：固定格式输出（命令、ID）；Mira 当前无此用例。</span></td>
+  <td class="where">需 expected_output</td>
+</tr>
+<tr>
+  <td class="name">PatternMatchMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail"><code>re.fullmatch(pattern, actual_output)</code>。<br><span class="why">用途：JSON 标识/日期格式约束。</span></td>
+  <td class="where">需 pattern</td>
+</tr>
+<tr>
+  <td class="name">JsonCorrectnessMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail"><code>expected_schema.model_validate_json(actual_output)</code>，二值 1/0。<br><span class="why">用途：结构化 JSON 输出校验。</span></td>
+  <td class="where">需 Pydantic schema</td>
+</tr>
+<tr>
+  <td class="name">ToolCorrectnessMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    集合比较：<code>tools_called</code> vs <code>expected_tools</code>。支持精确/有序/模糊匹配。
+    <span class="why">用途：当 golden 写出"应该调哪几个工具"时使用；目前 Mira goldens 用 <code>ToolUseMetric</code>（LLM 判断），更灵活。</span>
+  </td>
+  <td class="where">需 expected_tools 标注</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-custom-off">J. 自定义 / 组合型 — 未启用</h2>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">GEval（单轮版）</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    单轮 0-10 打分，用 top_logprobs 概率加权。
+    <span class="why">用途：当前 Mira 全走多轮，多轮版 ConversationalGEval 已覆盖；若未来出现单轮 fixture，再用。</span>
+  </td>
+  <td class="where">— </td>
+</tr>
+<tr>
+  <td class="name">DAGMetric / ConversationalDAGMetric</td>
+  <td><span class="badge p2">P2 可选</span></td>
+  <td class="status-off">○ 未启用</td>
+  <td class="detail">
+    有向无环图组合多个子判断节点（first-pass → detailed → 综合）。
+    <span class="why">用途：评测链路复杂、需多阶段时使用；普通 ConversationalGEval 够用前不必上 DAG。</span>
+  </td>
+  <td class="where">需要 DeepAcyclicGraph 定义</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-trace">K. Trace 类（@observe）— 不适用</h2>
+<div class="section-note gray">
+  这 4 个指标都标记 <code>requires_trace=True</code>，必须在 Python 侧用 <code>@observe</code> 构建 trace 树。
+  Mira 是 TS 后端，Python 端没有原生 trace —— 除非像 <code>test_smoke_hello_observed.py</code> 那样人工搭 span，否则用不了。
+</div>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">TaskCompletionMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 需 @observe trace</td>
+  <td class="detail">从 trace 抽 task & outcome，判任务是否完成。<br><span class="why">效果与 GoalAccuracy 重叠，本仓已用后者替代。</span></td>
+  <td class="where">requires_trace=True</td>
+</tr>
+<tr>
+  <td class="name">PlanAdherenceMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 需 @observe trace</td>
+  <td class="detail">实际行动是否遵守计划。</td>
+  <td class="where">requires_trace=True</td>
+</tr>
+<tr>
+  <td class="name">PlanQualityMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 需 @observe trace</td>
+  <td class="detail">生成的计划本身是否完整 / 清晰 / 合理。</td>
+  <td class="where">requires_trace=True</td>
+</tr>
+<tr>
+  <td class="name">StepEfficiencyMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 需 @observe trace</td>
+  <td class="detail">步骤数与资源消耗是否高效。<br><span class="why">本仓 OutputTokensPerSec + NTurns + SessionDuration 已经从结果端覆盖类似信号。</span></td>
+  <td class="where">requires_trace=True</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-mcp">L. MCP 类 — 不适用</h2>
+<div class="section-note gray">
+  这 3 个指标需要把工具调用解析为 <code>MCPToolCall</code>。Mira 的 SSE 解析层目前没有这层映射；未来如果接入 MCP server 再考虑。
+</div>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">MCPUseMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 无 MCP servers</td>
+  <td class="detail">判 Agent 是否正确选 / 用 MCP tools/resources/prompts。</td>
+  <td class="where">mcp_servers（必填）</td>
+</tr>
+<tr>
+  <td class="name">MCPTaskCompletionMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 无 MCP servers</td>
+  <td class="detail">多轮逐任务判 MCP 完成度。</td>
+  <td class="where">mcp_servers（必填）</td>
+</tr>
+<tr>
+  <td class="name">MultiTurnMCPUseMetric</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 无 MCP servers</td>
+  <td class="detail">多轮 MCP 工具选择 / 参数正确性。</td>
+  <td class="where">mcp_servers（必填）</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-mm">M. 多模态 — 不适用</h2>
+<div class="section-note gray">Mira 是纯文本 agent；这 5 个 MLLM-judge 指标都需要图像作为输入或输出。</div>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr><td class="name">TextToImageMetric</td><td><span class="badge p3">P3 不适用</span></td><td class="status-na">✕ 纯文本</td><td class="detail">文生图：图像与文本提示的一致性 + 感知质量。</td><td class="where">MLLMImage 输出</td></tr>
+<tr><td class="name">ImageEditingMetric</td><td><span class="badge p3">P3 不适用</span></td><td class="status-na">✕ 纯文本</td><td class="detail">编辑后图像是否符合编辑指令。</td><td class="where">MLLMImage 输出</td></tr>
+<tr><td class="name">ImageCoherenceMetric</td><td><span class="badge p3">P3 不适用</span></td><td class="status-na">✕ 纯文本</td><td class="detail">图文混排连贯性。</td><td class="where">混排输出</td></tr>
+<tr><td class="name">ImageHelpfulnessMetric</td><td><span class="badge p3">P3 不适用</span></td><td class="status-na">✕ 纯文本</td><td class="detail">图对文的帮助程度。</td><td class="where">混排输出</td></tr>
+<tr><td class="name">ImageReferenceMetric</td><td><span class="badge p3">P3 不适用</span></td><td class="status-na">✕ 纯文本</td><td class="detail">图与周围文本的参考价值。</td><td class="where">混排输出</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec-arena">N. 对比型 — 不适用</h2>
+<table>
+<thead><tr>
+  <th style="width:200px">指标</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:120px">状态</th>
+  <th>评分原理 / 用途</th>
+  <th style="width:200px">备注</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="name">ArenaGEval</td>
+  <td><span class="badge p3">P3 不适用</span></td>
+  <td class="status-na">✕ 单 Agent</td>
+  <td class="detail">让裁判对两个 response 选 winner + reason，无数值分。<br><span class="why">用途：A/B 比较两个 Agent 版本；单 Mira 跑不需要。如果未来比较"Mira 新旧两版"做发版决策，再启用。</span></td>
+  <td class="where">两份输出</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2>建议下一步动作（按收益排序）</h2>
+<table>
+<thead><tr>
+  <th style="width:60px">序号</th>
+  <th style="width:80px">优先级</th>
+  <th style="width:240px">动作</th>
+  <th>说明</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td>1</td>
+  <td><span class="badge p1">P1</span></td>
+  <td>启用 <code>MisuseMetric(domain="hiring assistant")</code></td>
+  <td>零业务改动，加一个字符串即可上线，把"招聘边界外的请求"做成硬约束。</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><span class="badge p1">P1</span></td>
+  <td>把 BFF 检索结果通过 SSE 透出，开 <code>FaithfulnessMetric</code></td>
+  <td>RAG 反幻觉的标准指标。需要后端配合在流里加 <code>retrieval</code> 事件。</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><span class="badge p1">P1</span></td>
+  <td>把 5 个 info-only Ops 指标里至少 <code>SessionCost</code> 升级为软门禁</td>
+  <td>例如设 <code>threshold=2.0 USD</code> 仅在超阈值时高亮，不直接 fail。当前完全只看趋势容易被慢慢飘高吃掉。</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><span class="badge p2">P2</span></td>
+  <td>用 <code>ArenaGEval</code> 做发版前 A/B 对比</td>
+  <td>当下 Mira 改 prompt / 换模型时缺少结构化的"新版 vs 旧版"对比；可手动选 5 个高价值 golden 做 arena。</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><span class="badge p2">P2</span></td>
+  <td>对每个 golden 标注 <code>expected_tools</code> 后启用 <code>ToolCorrectnessMetric</code></td>
+  <td>当前 <code>ToolUseMetric</code> 是 LLM judge（贵 + 偶有飘动），加一层确定性集合比较可降本提稳。</td>
+</tr>
+</tbody>
+</table>
+
+<div class="footer">
+  生成时间：2026-05-13 · 数据源：<code>tests/evals/test_mira_*.py</code>、<code>custom_metrics/</code>、<code>.research/deepeval-metrics-guide.md</code>。<br>
+  路径：<code>.research/metrics-overview.html</code>
+</div>
+
+</div>
+</body>
+</html>

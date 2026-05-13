@@ -124,9 +124,10 @@ _METRIC_DESCRIPTIONS: dict[str, str] = {
         "不编造具体数字 / 模糊时 ask clarification / 结构化输出）。"
     ),
     # run-health (deterministic, no judge)
-    "RunCompletionMetric": (
-        "运行完整性：机械检查 Mira 这次跑是否完整完成"
-        "（无 stream_truncated / 无 tool error / 无空 assistant turn）。无 judge 调用。"
+    "SessionHealthMetric": (
+        "Session 完成度：三层独立检查 — client（无 stream_truncated / 无 tool error / "
+        "无空 assistant turn）、trace（Langfuse trace 正常结束 + level=DEFAULT）、"
+        "persistence（Postgres messages 配对 + parts 终态合法）。全 pass 才 1.0。无 judge 调用。"
     ),
 }
 

@@ -64,7 +64,6 @@ import test_mira_custom as f_custom      # type: ignore[import-not-found]
 import test_mira_tooluse as f_tooluse    # type: ignore[import-not-found]
 import test_mira_safety as f_safety      # type: ignore[import-not-found]
 import test_mira_others as f_others      # type: ignore[import-not-found]
-import test_mira_run as f_run            # type: ignore[import-not-found]
 import test_mira_ops as f_ops            # type: ignore[import-not-found]
 
 from deepeval.errors import MissingTestCaseParamsError
@@ -84,8 +83,6 @@ def _collect_metrics() -> list[tuple[str, str, Any]]:
     via duck-typing on metadata.conv_id, so they live under scope='multi'.
     """
     rows: list[tuple[str, str, Any]] = []
-    for m in f_run.METRICS:
-        rows.append(("run", "multi", m))
     for m in f_ops.METRICS:
         rows.append(("ops", "multi", m))
     for m in f_e2e.METRICS:
@@ -217,7 +214,7 @@ def _ensure_share_url(conv_id: str) -> str | None:
 # display label like "GEval/ProfessionalNoFabrication" (matches _metric_label).
 _METRIC_PROFILE: dict[str, str] = {
     # signal — decision-grade
-    "RunCompletionMetric":              "signal",  # deterministic, zero-cost mechanical check
+    "SessionHealthMetric":              "signal",  # client + trace + DB layered gate, deterministic (1 LLM-free check per layer)
     "ConversationCompletenessMetric":   "signal",
     "TurnRelevancyMetric":              "signal",
     "RoleAdherenceMetric":              "signal",

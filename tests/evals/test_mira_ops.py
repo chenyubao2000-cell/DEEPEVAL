@@ -1,14 +1,14 @@
-"""Operational metrics for Mira — token / cost / latency / completion checks.
+"""Operational metrics for Mira — health / token / cost / latency / path.
 
 These are *operational* signals, not output quality:
-- Did the trace finish cleanly? (Completed)
-- Are messages persisted correctly? (DatabaseStatus)
+- Did the session complete cleanly across client / trace / DB layers?
+  (SessionHealth — replaces RunCompletion + Completed + DatabaseStatus)
 - How many tokens / USD / seconds did Mira burn? (Tokens, SessionCost,
   TimeToFirstToken, SessionDuration, OutputTokensPerSec, NTurns)
 - Did the tool call path violate any documented constraint? (ToolDependency)
 
 All metrics read ``conv_id`` from ``test_case.metadata`` (populated by
-``_driver.build_conversational(session=...)``). 8 of the 9 are deterministic
+``_driver.build_conversational(session=...)``). 7 of the 8 are deterministic
 (zero judge cost); ``ToolDependencyMetric`` is the only one that fires a
 local claude CLI call, and only when tools were actually invoked.
 
@@ -25,14 +25,14 @@ from tests.evals._driver import (
     golden_id,
     load_goldens,
 )
+from tests.evals._metrics_config import filter_active, make_skip_mark
 
 from custom_metrics import (
-    CompletedMetric,
-    DatabaseStatusMetric,
     NTurnsMetric,
     OutputTokensPerSecMetric,
     SessionCostMetric,
     SessionDurationMetric,
+    SessionHealthMetric,
     TimeToFirstTokenMetric,
     TokensMetric,
     ToolDependencyMetric,
@@ -42,10 +42,9 @@ from custom_metrics import (
 # Single METRICS list reused by both pytest and report.py's `_collect_metrics`.
 # Reading values: pass/fail thresholds chosen to flag *broken* runs (timeouts,
 # stalled streams, cost blow-outs) rather than micro-optimisations.
-METRICS = [
+METRICS = filter_active([
     # Real gates — these can break a run.
-    CompletedMetric(),                                 # binary: trace healthy
-    DatabaseStatusMetric(),                            # binary: messages persisted ok
+    SessionHealthMetric(),                             # binary: client+trace+DB all clean
     NTurnsMetric(threshold=30),                        # runaway-conversation cap
     ToolDependencyMetric(threshold=0.8),               # ≥80% steps must comply
     # Informational — recorded for trend monitoring, never fails the run.
@@ -56,7 +55,9 @@ METRICS = [
     TimeToFirstTokenMetric(informational=True),        # seconds
     SessionDurationMetric(informational=True),         # seconds (wall clock)
     OutputTokensPerSecMetric(informational=True),      # tok/s streaming
-]
+])
+
+pytestmark = make_skip_mark(__file__, METRICS)
 
 
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)

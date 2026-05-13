@@ -24,6 +24,7 @@ from tests.evals._driver import (
     golden_id,
     load_goldens,
 )
+from tests.evals._metrics_config import filter_active, make_skip_mark
 
 
 judge = ClaudeCliJudge()
@@ -38,7 +39,7 @@ MIRA_PROMPT_INSTRUCTIONS = [
 ]
 
 
-METRICS = [
+METRICS = filter_active([
     AnswerRelevancyMetric(threshold=0.5, model=judge, async_mode=False),
     PromptAlignmentMetric(
         prompt_instructions=MIRA_PROMPT_INSTRUCTIONS,
@@ -46,7 +47,9 @@ METRICS = [
         model=judge,
         async_mode=False,
     ),
-]
+])
+
+pytestmark = make_skip_mark(__file__, METRICS)
 
 
 @pytest.mark.parametrize("golden", load_goldens(), ids=golden_id)

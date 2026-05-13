@@ -21,6 +21,10 @@ markdown-it-py==4.2.0
 # 4.6.1 验证可用；后续 4.x 兼容。
 langfuse>=4.6,<5.0
 
+# ── Postgres driver (SessionHealthMetric persistence layer reads `messages`) ─
+# `psycopg[binary]` 带预编译的 libpq；不用本地装 PostgreSQL 头文件。
+psycopg[binary]>=3.3,<4.0
+
 # NOTE: `claude` CLI 不通过 pip 安装，单独 `brew install claude` 或参考
 # Anthropic 官方文档。所有 judge 调用都走 CLI subprocess，没有走 anthropic
 # Python SDK，故 anthropic 不需要在这里。
