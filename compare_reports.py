@@ -59,6 +59,94 @@ _VERDICT_PILL = {
 }
 
 
+# 每个指标做什么的中文短解释，鼠标 hover 指标名时弹 tooltip。
+# Keys: 必须严格匹配 report.py 的 _metric_label() 输出 — 即 ClassName 或 "GEval/<name>"。
+_METRIC_DESCRIPTIONS: dict[str, str] = {
+    # e2e — 多轮内置
+    "ConversationCompletenessMetric": (
+        "对话完整性：用户提出的意图集合是否被整段对话覆盖。"
+        "Judge 先从对话里抽取用户意图，再逐条判断是否被响应过。"
+    ),
+    "TurnRelevancyMetric": (
+        "回合相关度：每一轮 assistant 回复是否在响应对应的 user turn（不跑题、不答非所问）。"
+    ),
+    "KnowledgeRetentionMetric": (
+        "知识保留：早期已确认的事实，后续轮里是否被遗忘 / 改错。"
+        "单轮（1U/1A）对话下该指标无判别力。"
+    ),
+    "RoleAdherenceMetric": (
+        "角色一致性：是否守住了 chatbot_role 字段定义的人设。"
+    ),
+    "GoalAccuracyMetric": (
+        "目标达成度：用户最终 goal 有没有达成（结果导向，不看过程）。"
+    ),
+    # custom — ConversationalGEval
+    "GEval/ProfessionalNoFabrication [Conversational GEval]": (
+        "专业 & 不杜撰：专业简洁口吻 + 不虚构前文/能力/用户身份 + 模糊时主动 ask clarification + "
+        "不泄漏 LLM 内部机制（如 [finish_reason=tool-calls] / 'I have no memory' 这类）。"
+    ),
+    "GEval/DeliverableMatchesRequest [Conversational GEval]": (
+        "交付物匹配：用户要的具体交付物（PPT/Excel/PDF/图片/N 人候选清单/结构化报告等）"
+        "有没有真的产出。只描述不产出 = 中分；忽略或替换无关内容 = 低分。"
+    ),
+    "GEval/GroundedNoFabrication [Conversational GEval]": (
+        "事实可溯：具体事实（公司名/统计数字/薪资/URL/日期/市场规模）"
+        "必须 (a) 有可追溯来源 或 (b) 显式标注「数据局限/不可验证」。不许凭空编造精确数字。"
+    ),
+    # tooluse
+    "ToolUseMetric": (
+        "工具使用合理性：在合理时机选了合理工具（available_tools 从 Langfuse trace 实时拉取）。"
+        "不是「序列完全匹配」，而是「choice 是否 sensible」。"
+    ),
+    "TopicAdherenceMetric": (
+        "话题一致性：assistant 内容是否在 RELEVANT_TOPICS 列表覆盖的话题范围内。"
+        "Judge 抖动较大，topics 描述不完整时可能假阳/假阴。"
+    ),
+    "ArgumentCorrectnessMetric": (
+        "工具入参正确性：每一次工具调用的 input_parameters 是否合理（跟 user intent 对得上）。"
+        "只看入参，不看 output。"
+    ),
+    # safety
+    "BiasMetric": "偏见检测（反向指标，分数越低越好）：性别/种族/年龄/地域偏见。中文招聘语料下几乎稳定 0.00。",
+    "ToxicityMetric": "毒性检测（反向指标）：脏话/贬损/敌意话语。中文招聘语料下几乎稳定 0.00。",
+    "PIILeakageMetric": (
+        "隐私泄漏：assistant 输出里是否含姓名/电话/邮箱/身份证号/内部 ID 等 PII。"
+        "在 voice / ci_email 用例下结构性假阳（用户主动给的 PII 复述也算）。"
+    ),
+    "RoleViolationMetric": (
+        "角色越界：assistant 是否突破了 role 定义的边界（假装别的 agent 等）。"
+        "已知 DeepEval 4.0 verdicts 和 reason 自相矛盾，全局已 skip。"
+    ),
+    # others
+    "AnswerRelevancyMetric": "回答相关度：回复整体跟 user input 的相关度（单点视角，不要求多轮上下文）。",
+    "PromptAlignmentMetric": (
+        "提示指令遵循：assistant 是否遵守了 5 条通用行为准则（专业简洁口吻 / 真交付 / "
+        "不编造具体数字 / 模糊时 ask clarification / 结构化输出）。"
+    ),
+    # run-health (deterministic, no judge)
+    "RunCompletionMetric": (
+        "运行完整性：机械检查 Mira 这次跑是否完整完成"
+        "（无 stream_truncated / 无 tool error / 无空 assistant turn）。无 judge 调用。"
+    ),
+}
+
+
+def _metric_desc(metric_label: str) -> str:
+    """Look up metric description, with graceful fallback."""
+    return _METRIC_DESCRIPTIONS.get(metric_label, "")
+
+
+def _metric_cell(label: str) -> str:
+    """Render the metric column with a title attr that browsers show as tooltip."""
+    desc = _metric_desc(label)
+    if desc:
+        return (
+            f'<td><code title="{html_lib.escape(desc)}">{html_lib.escape(label)}</code>'
+            f' <span class="info-dot" title="{html_lib.escape(desc)}">ⓘ</span></td>'
+        )
+    return f'<td><code>{html_lib.escape(label)}</code></td>'
+
+
 def _fmt_score(v: Any) -> str:
     if v is None:
         return "—"
@@ -130,7 +218,7 @@ def _golden_block(left_g: dict | None, right_g: dict | None, left_label: str, ri
         rows.append(
             "<tr>"
             f"<td><code>{html_lib.escape(file_part)}</code></td>"
-            f"<td><code>{html_lib.escape(metric_part)}</code></td>"
+            f"{_metric_cell(metric_part)}"
             f"<td class='right'>{_fmt_score(l_score)}</td>"
             f"<td>{_VERDICT_PILL[l_verdict]}</td>"
             f"<td class='right'>{_fmt_score(r_score)}</td>"
@@ -257,6 +345,63 @@ th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
 @media (prefers-color-scheme: dark) {
   .pill.inconclusive { color: #f0c674; background: #3a2f0a; }
 }
+
+/* metric description tooltip dot */
+.info-dot {
+  display: inline-block;
+  margin-left: 2px;
+  width: 14px; height: 14px; line-height: 14px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 50%;
+  background: var(--code-bg);
+  color: var(--muted);
+  cursor: help;
+}
+.info-dot:hover { background: var(--link); color: white; }
+
+/* per-environment issue panel */
+.env-issues {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 18px 0;
+}
+.env-issues-col {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.env-issues-col h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.env-issues-col .empty-state {
+  color: var(--pass);
+  background: var(--pass-bg);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.issue-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--fail);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.issue-card.err { border-left-color: var(--err); }
+.issue-card .issue-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.issue-card .issue-scenario { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.issue-card .issue-reason { color: var(--fg); line-height: 1.5; }
+.issue-card .issue-link { font-size: 12px; margin-top: 6px; }
+.issue-card .issue-link a { color: var(--link); }
 .totals { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 10px; }
 .totals .pill { font-size: 13px; padding: 4px 12px; }
 .meta-row { display: flex; flex-wrap: wrap; margin: 4px 0 10px; }
@@ -293,6 +438,81 @@ tbody tr:hover { background: color-mix(in srgb, var(--link) 7%, transparent); }
 
 footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 """
+
+
+def _env_issue_panel(side: dict, side_label: str) -> str:
+    """Build a single environment's FAIL / ERROR / INCONCLUSIVE summary card."""
+    issues: list[str] = []
+    for g in side.get("results", []):
+        for m in g.get("metrics", []):
+            v = m.get("verdict")
+            if v not in ("FAIL", "ERROR", "INCONCLUSIVE"):
+                continue
+            cls = "issue-card"
+            if v == "ERROR":
+                cls += " err"
+            verdict_pill = _VERDICT_PILL.get(v, v)
+            metric_label = m.get("metric", "?")
+            desc = _metric_desc(metric_label)
+            score = _fmt_score(m.get("score"))
+            thr = _fmt_score(m.get("threshold"))
+            reason = (m.get("reason") or "").replace("\n", " ").strip()
+            reason_html = html_lib.escape(reason[:500]) if reason else ""
+            head = (
+                f'<div class="issue-head">'
+                f'<b>[{g.get("index", "?")}]</b>'
+                f' <code>{html_lib.escape(g.get("category") or "—")}</code>'
+                f' {verdict_pill}'
+                f' <code title="{html_lib.escape(desc)}">{html_lib.escape(metric_label)}</code>'
+                f' <span class="muted">score={score} · thr={thr}</span>'
+                f'</div>'
+            )
+            scenario = html_lib.escape((g.get("scenario") or "")[:90])
+            scenario_line = f'<div class="issue-scenario">📋 {scenario}</div>' if scenario else ""
+            reason_line = f'<div class="issue-reason">💬 {reason_html}</div>' if reason_html else ""
+            link = g.get("share_url") or g.get("task_url")
+            link_line = ""
+            if link:
+                link_line = (
+                    f'<div class="issue-link">🔗 <a href="{html_lib.escape(link)}" target="_blank">'
+                    f'查看完整对话</a></div>'
+                )
+            issues.append(
+                f'<div class="{cls}">{head}{scenario_line}{reason_line}{link_line}</div>'
+            )
+
+    if not issues:
+        body = '<div class="empty-state">✅ 该环境本次评测无 FAIL / ERROR / INCONCLUSIVE 项</div>'
+    else:
+        body = "\n".join(issues)
+    return (
+        f'<div class="env-issues-col">'
+        f'<h3>{html_lib.escape(side_label)} <span class="muted" style="font-size:12px">'
+        f'· {len(issues)} 个问题</span></h3>'
+        f'{body}'
+        f'</div>'
+    )
+
+
+def _glossary_block() -> str:
+    """A standalone glossary section listing each metric's Chinese explanation."""
+    rows: list[str] = []
+    for label, desc in _METRIC_DESCRIPTIONS.items():
+        rows.append(
+            f"<tr><td><code>{html_lib.escape(label)}</code></td>"
+            f"<td>{html_lib.escape(desc)}</td></tr>"
+        )
+    return (
+        '<details style="margin: 18px 0;">'
+        '<summary style="cursor:pointer; font-weight:600; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;">'
+        '📖 指标说明（点击展开，共 17 项）'
+        '</summary>'
+        '<table style="margin-top: 10px;">'
+        '<thead><tr><th style="width: 38%">指标</th><th>说明</th></tr></thead>'
+        f"<tbody>{''.join(rows)}</tbody>"
+        '</table>'
+        '</details>'
+    )
 
 
 def render_html(left: dict, right: dict, left_label: str, right_label: str) -> str:
@@ -366,8 +586,15 @@ def render_html(left: dict, right: dict, left_label: str, right_label: str) -> s
 {_agg_pills(Ragg)}
 {meta_table}
 {legend}
+{_glossary_block()}
 <h2>逐用例对比</h2>
 {blocks}
+<h2>每个环境的问题清单</h2>
+<p class="muted" style="font-size:13px">本节聚合两侧所有 FAIL / ERROR / INCONCLUSIVE 项，便于按环境维度看 Mira 在哪里出问题。指标名 hover 看简要解释，链接点开看完整对话。</p>
+<div class="env-issues">
+{_env_issue_panel(left, left_label)}
+{_env_issue_panel(right, right_label)}
+</div>
 <footer>由 compare_reports.py 渲染。</footer>
 </main>
 </body>
