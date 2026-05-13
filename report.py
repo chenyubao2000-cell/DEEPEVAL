@@ -778,8 +778,10 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
 
     # ── TOP-LEVEL VERDICT (Layer 4: split by profile) ──────────────────────
     # PASS 率只统计 signal 类指标。noisy 仅作辅助参考。broken 已 skip。
+    # INFO（informational=True，主要是 ops 桶里的 token/cost/latency）也在
+    # 这里计数但不进 PASS 率分母 —— 与 §按类别/按指标 的口径一致。
     def _tally(predicate) -> dict:
-        d = {"PASS": 0, "FAIL": 0, "ERROR": 0, "NONE": 0, "INCONCLUSIVE": 0}
+        d = {"PASS": 0, "FAIL": 0, "ERROR": 0, "NONE": 0, "INCONCLUSIVE": 0, "INFO": 0}
         for gr in results:
             for mr in gr.metric_results:
                 if not predicate(mr):
@@ -787,6 +789,7 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
                 v = _verdict(mr)
                 d[v] = d.get(v, 0) + 1
         d["TOTAL"] = sum(d.values())
+        # PASS 率：只看真正参与 gate 的两档；INFO/ERROR/NONE/INCONCLUSIVE 都不进分母
         denom = d["PASS"] + d["FAIL"]
         d["RATE"] = (d["PASS"] / denom * 100) if denom else 0.0
         return d
@@ -805,11 +808,15 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     add(f"## 总评 — 仅信号指标（signal）")
     add("")
     add(f"> 信号指标 = 11 个可信、有判别力的 metric；这一行才是 Mira 真实表现的决策依据。")
-    add(f"> Noisy / Broken 的分布看下面两节。")
+    add(f"> Noisy / Broken 的分布看下面两节。`ℹ INFO` 是 `informational=True` 的 ops 指标（token/cost/latency），仅记录、不进 PASS 率分母。")
     add("")
-    add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? | 通过率（PASS / (PASS+FAIL)）|")
-    add(f"|---:|---:|---:|---:|---:|---:|")
-    add(f"| **{signal_t['PASS']}** | **{signal_t['FAIL']}** | **{signal_t['ERROR']}** | **{signal_t['NONE']}** | **{signal_t['INCONCLUSIVE']}** | **{signal_t['RATE']:.1f}%** |")
+    add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? | 仅记录 ℹ | 通过率（PASS / (PASS+FAIL)）|")
+    add(f"|---:|---:|---:|---:|---:|---:|---:|")
+    add(
+        f"| **{signal_t['PASS']}** | **{signal_t['FAIL']}** | **{signal_t['ERROR']}** | "
+        f"**{signal_t['NONE']}** | **{signal_t['INCONCLUSIVE']}** | **{signal_t['INFO']}** | "
+        f"**{signal_t['RATE']:.1f}%** |"
+    )
     add("")
 
     add(f"## 辅助参考 — noisy 指标（不进 PASS 率，仅供观察）")
@@ -817,9 +824,12 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     if noisy_t["TOTAL"] == 0:
         add("（本次跑未产生 noisy 指标结果。）")
     else:
-        add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? |")
-        add(f"|---:|---:|---:|---:|---:|")
-        add(f"| {noisy_t['PASS']} | {noisy_t['FAIL']} | {noisy_t['ERROR']} | {noisy_t['NONE']} | {noisy_t['INCONCLUSIVE']} |")
+        add(f"| 通过 ✓ | 失败 ✗ | 错误 ! | 缺失 · | 自相矛盾 ? | 仅记录 ℹ |")
+        add(f"|---:|---:|---:|---:|---:|---:|")
+        add(
+            f"| {noisy_t['PASS']} | {noisy_t['FAIL']} | {noisy_t['ERROR']} | "
+            f"{noisy_t['NONE']} | {noisy_t['INCONCLUSIVE']} | {noisy_t['INFO']} |"
+        )
         add("")
         add(f"> 这些 metric 在我们场景下判官抖动大或结构性假阳/假阴。不计入总评。")
     add("")
