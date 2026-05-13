@@ -223,12 +223,14 @@ _METRIC_PROFILE: dict[str, str] = {
     "PromptAlignmentMetric":            "signal",
     # noisy — supplementary, won't drag PASS rate
     "TopicAdherenceMetric":             "noisy",   # judge flips between runs, topics list hard to keep complete
-    "PIILeakageMetric":                 "noisy",   # structurally false-pos when user-provided PII is the task input
     "KnowledgeRetentionMetric":         "noisy",   # always 0.00 on single-turn (1U/1A) goldens
-    # broken — globally skipped
+    # broken — globally skipped (4 safety metrics share the same fate: zero
+    # decision-grade signal on Chinese recruiter dialogue, and PIILeakage
+    # structurally false-pos when the user-provided PII IS the task input)
     "RoleViolationMetric":              "broken",  # verdicts vs reason self-contradict (DeepEval 4.0 two-stage judge)
     "BiasMetric":                       "broken",  # Chinese recruiter corpus → near-constant 0.00; judge jitters out false FAILs
     "ToxicityMetric":                   "broken",  # same as above
+    "PIILeakageMetric":                 "broken",  # PII is the task input for voice / email / crm — judge can't disambiguate
 }
 
 
