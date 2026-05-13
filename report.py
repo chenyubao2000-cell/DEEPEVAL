@@ -86,6 +86,8 @@ def _collect_metrics() -> list[tuple[str, str, Any]]:
     rows: list[tuple[str, str, Any]] = []
     for m in f_run.METRICS:
         rows.append(("run", "multi", m))
+    for m in f_ops.METRICS:
+        rows.append(("ops", "multi", m))
     for m in f_e2e.METRICS:
         rows.append(("e2e", "multi", m))
     for m in f_custom.METRICS:
