@@ -39,6 +39,105 @@ from mira_client import MiraSession
 import os as _os
 _MAX_TOOL_OUTPUT_CHARS = int(_os.environ.get("MIRA_MAX_TOOL_OUTPUT_CHARS", "1500"))
 
+# Artifact-producing tools — the deliverable lives in `input.fileContents`,
+# not in tool output. Without intervention, judges only see the success
+# bool from tool output and miss the actual content; metrics like
+# `DeliverableMatchesRequest` / `PromptAlignment` then incorrectly score the
+# golden as "no deliverable" even though Mira created a full PPT / Markdown
+# / Excel etc. Layer A: surface the artifact body inside ToolCall.output.
+#
+# sb_image_create is included even though it has no text body — the path
+# alone is useful to judges.
+_ARTIFACT_TOOLS: set[str] = {
+    "sb_file_create",
+    "sb_file_rewrite",
+    "sb_file_edit",
+    "sb_docx_create",
+    "sb_pptx_create",
+    "sb_xlsx_create",
+    "sb_pdf_create",
+    "sb_image_create",
+}
+
+# How much of an artifact body we embed per tool call. Independent from the
+# generic tool-output cap because we WANT to give judges the full deliverable
+# (up to this limit) rather than truncating to 1500 chars total.
+_ARTIFACT_BODY_MAX_CHARS = int(_os.environ.get("MIRA_MAX_ARTIFACT_CHARS", "1500"))
+
+
+def _extract_artifact(
+    tool_name: str,
+    input_dict: dict | None,
+    output: Any,
+) -> tuple[str | None, str | None]:
+    """For artifact-producing tools, derive (filePath, body) from tool I/O.
+
+    Field names vary across tools (`fileContents` for sb_file_* / sb_docx_*,
+    `content` for some, output.data.filePath for write confirmations); this
+    normalises them. Returns (None, None) when neither is present (e.g.
+    sb_image_create returns only a URL in output).
+    """
+    inp = input_dict or {}
+    path = (
+        inp.get("filePath")
+        or inp.get("file_path")
+        or inp.get("path")
+        or inp.get("filename")
+    )
+    # Fall back to output.data.filePath if input didn't carry the path
+    if not path and isinstance(output, dict):
+        try:
+            path = (output.get("data") or {}).get("filePath") or path
+        except Exception:
+            pass
+
+    body: str | None = None
+    for key in ("fileContents", "file_contents", "content", "text"):
+        if key in inp and inp[key]:
+            body = str(inp[key])
+            break
+
+    return path, body
+
+
+def _augment_output_with_artifact(
+    tool_name: str,
+    raw_output: Any,
+    input_dict: dict | None,
+) -> str:
+    """Wrap a file-creating tool's output with the artifact preview so the
+    judge sees the actual deliverable (head of file body + path) rather than
+    just `"success": true`. Falls back to raw_output if nothing to surface.
+    """
+    path, body = _extract_artifact(tool_name, input_dict, raw_output)
+    if not (path or body):
+        return _coerce_output(raw_output)
+
+    parts: list[str] = []
+    if path:
+        parts.append(f"📎 ARTIFACT: {path}")
+    if body:
+        truncated = body[:_ARTIFACT_BODY_MAX_CHARS]
+        suffix = ""
+        if len(body) > _ARTIFACT_BODY_MAX_CHARS:
+            suffix = f"\n...[truncated {len(body) - _ARTIFACT_BODY_MAX_CHARS} chars of {len(body)} total]"
+        parts.append(f"📄 CONTENT ({len(body)} chars total):\n{truncated}{suffix}")
+    # Preserve the original ok/error status from the tool itself
+    try:
+        orig = (
+            json.dumps(raw_output, ensure_ascii=False)
+            if isinstance(raw_output, (dict, list))
+            else str(raw_output)
+        )
+    except Exception:
+        orig = str(raw_output)
+    if orig and orig not in ("None", "null"):
+        # cap the appended raw status alone, but don't clip the artifact body
+        if len(orig) > 400:
+            orig = orig[:400] + "...[truncated]"
+        parts.append(f"[tool status]\n{orig}")
+    return "\n\n".join(parts)
+
 
 # Tool registry (name -> {description, input_schema}). Populated by report.py
 # from the on-disk Langfuse cache before any goldens run, and re-set after the
@@ -77,16 +176,68 @@ def _tc_dict_to_toolcall(tc: dict) -> ToolCall:
 
     The tool's description (from the cached Langfuse registry) is attached so
     downstream metrics can judge tool choice against the tool's declared scope.
+
+    Layer A: for file-creating tools (`_ARTIFACT_TOOLS`), the actual deliverable
+    is in tool INPUT (`fileContents`), not OUTPUT — without help the judge sees
+    only `{"success": true}` and concludes "no deliverable". We re-pack the
+    input body into the output field the judge reads.
     """
     name = tc.get("tool_name") or "unknown_tool"
     meta = _REGISTRY.get(name) or {}
+    raw_output = tc.get("output")
+    input_dict = tc.get("input") if isinstance(tc.get("input"), dict) else None
+    if name in _ARTIFACT_TOOLS:
+        coerced_output = _augment_output_with_artifact(name, raw_output, input_dict)
+    else:
+        coerced_output = _coerce_output(raw_output)
     return ToolCall(
         name=name,
-        input_parameters=tc.get("input") if isinstance(tc.get("input"), dict) else None,
-        output=_coerce_output(tc.get("output")),
+        input_parameters=input_dict,
+        output=coerced_output,
         description=meta.get("description"),
         reasoning=None,
     )
+
+
+def _build_artifact_section(turn_tools: list[ToolCall]) -> str:
+    """If any artifact-producing tools fired in this turn, return a markdown
+    section the judge will see appended to the assistant Turn content.
+
+    Empty string when no artifact tools were used (avoids polluting plain
+    chat turns). This is Layer B: even text-only metrics (PromptAlignment /
+    AnswerRelevancy) that don't introspect `tools_called` now see the
+    delivered file body inline.
+    """
+    artifacts: list[tuple[str, str | None, str | None]] = []
+    for tc in turn_tools or []:
+        if tc.name not in _ARTIFACT_TOOLS:
+            continue
+        path, body = _extract_artifact(tc.name, tc.input_parameters, tc.output)
+        if not (path or body):
+            continue
+        artifacts.append((tc.name, path, body))
+    if not artifacts:
+        return ""
+
+    lines = ["", "---", "", "### 📎 本轮产出的交付物（评测可见）", ""]
+    for name, path, body in artifacts:
+        if path:
+            lines.append(f"**`{name}`** → `{path}`")
+        else:
+            lines.append(f"**`{name}`**")
+        if body:
+            preview = body[:_ARTIFACT_BODY_MAX_CHARS]
+            suffix = ""
+            if len(body) > _ARTIFACT_BODY_MAX_CHARS:
+                suffix = f"\n...[已截断 {len(body) - _ARTIFACT_BODY_MAX_CHARS} 字 / 总长 {len(body)} 字]"
+            lines.append("")
+            # Fence on a 4-tick boundary to avoid colliding with any 3-tick
+            # blocks the body might contain (markdown / code samples).
+            lines.append("````")
+            lines.append(preview + suffix)
+            lines.append("````")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def drive_mira(golden: dict) -> tuple[MiraSession, list[Turn]]:
@@ -113,9 +264,15 @@ def drive_mira(golden: dict) -> tuple[MiraSession, list[Turn]]:
         last = session.history[-1]
         assert last["role"] == "assistant", "MiraSession history out of sync"
         tools_called = [_tc_dict_to_toolcall(tc) for tc in last.get("tool_calls", [])]
+        # Layer B: if this turn produced files via sb_*_create, append a
+        # "本轮产出的交付物" section to the assistant Turn content so even
+        # text-only metrics (PromptAlignment / AnswerRelevancy / our 3 GEval
+        # rubrics) that don't introspect tools_called see the deliverable.
+        artifact_section = _build_artifact_section(tools_called)
+        turn_content = (reply + artifact_section) if artifact_section else reply
         turns.append(Turn(
             role="assistant",
-            content=reply,
+            content=turn_content,
             tools_called=tools_called or None,
         ))
     return session, turns
