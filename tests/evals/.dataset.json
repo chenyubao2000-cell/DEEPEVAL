@@ -164,7 +164,13 @@
       "_tier": "light",
       "_category": "ci_dingding",
       "scenario": "CI 钉钉场景 1：创建一个明天下午 3 点、主题为「重塑质量安全」的会议日程，与会人为有凌凯、陈玉宝、周正雨。",
-      "expected_outcome": "Mira 通过钉钉集成创建日程：时间=执行时间下一天的下午3点；主题 = 重塑质量安全；与会人 = 凌凯、陈玉宝、周正雨。回执应回报：日程主题、开始/结束时间、邀请人数或部门标签、（如可获取）日程 ID。无法访问通讯录时应说明并请求名单。",
+      "expected_outcome": "Mira 通过钉钉集成处理该日程创建请求。若闲忙检查发现与会人冲突，应主动告知冲突详情（具体人和时段）并询问用户取舍——仍按原时段创建 / 改时段 / 仅邀请无冲突的人。无冲突或用户确认后完成创建并回报：主题、最终时间、与会人、（如可获取）日程 ID。无法访问通讯录时应说明并请求名单。下列任何一条路径都视为合理完成（详见 _acceptable_paths）。",
+      "_acceptable_paths": [
+        "direct_create_no_conflict — 无冲突直接创建并回报日程详情",
+        "detect_conflict → ask_user → user_confirms → create — 报冲突 + 用户同意原时段 → 创建",
+        "detect_conflict → ask_user → user_picks_new_time → create — 报冲突 + 用户给新时段 → 改时段创建",
+        "detect_conflict → ask_user → user_cancels → suggest_alternatives — 报冲突 + 用户取消 + 主动建议 1-2 个候选时段（这种半完成也算 PASS，因为给了用户继续推进的下一步）"
+      ],
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "创建一个日程 明天下午3点 主题是重塑质量安全 与会人员是与会人为有凌凯、陈玉宝、周正雨。"

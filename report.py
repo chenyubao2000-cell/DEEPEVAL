@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -436,11 +437,30 @@ _GUILTY_PHRASES = (
 )
 
 
+_SCORE_DECL_RE = re.compile(
+    r"(?:分数(?:为|是)|得分(?:为|是)|score\s+is|score\s*[:=])\s*([0-9](?:\.[0-9]+)?)",
+    re.IGNORECASE,
+)
+
+
 def _audit_judge_consistency(score, threshold, success, reason) -> str | None:
-    """Return a warning string if verdict and reason directionally disagree."""
+    """Return a warning string if verdict and reason directionally disagree,
+    OR if reason declares multiple distinct numeric scores (judge wrote a
+    contradictory multi-paragraph reason — observed on ToolUseMetric where
+    one paragraph says '分数为 0.5' and another says '得分为 1.0').
+    """
     if reason is None:
         return None
     text = reason.lower()
+
+    # ── Self-contradicting numeric scores within a single reason ────────────
+    matches = _SCORE_DECL_RE.findall(reason)
+    distinct = {f"{float(m):.2f}" for m in matches if 0.0 <= float(m) <= 1.0}
+    if len(distinct) >= 2:
+        return (
+            f"judge contradiction: reason declares {len(distinct)} different scores "
+            f"({', '.join(sorted(distinct))}) — multi-paragraph judge output disagrees with itself"
+        )
 
     # Determine the *numeric* verdict (ignoring our INCONCLUSIVE machinery)
     if success is True:

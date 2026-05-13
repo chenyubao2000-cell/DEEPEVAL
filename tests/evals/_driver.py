@@ -288,6 +288,13 @@ def build_conversational(
     If `session` is provided, stash session.warnings and any tool-error markers
     into `test_case.metadata`. RunCompletionMetric reads these to do mechanical
     health checks without firing an LLM judge. Other metrics ignore metadata.
+
+    If the golden lists `_acceptable_paths`, append them to expected_outcome so
+    every text-based metric (Completeness / Deliverable / Professional / Goal /
+    PromptAlignment) sees "any of these decision paths counts as completion".
+    Without this, judges anchor on a single fixed expected path and produce
+    false FAILs when Mira takes a reasonable HITL branch (e.g. asking the user
+    instead of force-creating on conflict). See dataset golden [16] commentary.
     """
     metadata: dict | None = None
     if session is not None:
@@ -302,10 +309,18 @@ def build_conversational(
             "mira_warnings": list(session.warnings),
             "mira_tool_errors": tool_errors,
         }
+    expected_outcome = golden.get("expected_outcome") or ""
+    acceptable = golden.get("_acceptable_paths") or []
+    if acceptable:
+        bullets = "\n".join(f"  - {p}" for p in acceptable)
+        expected_outcome = (
+            f"{expected_outcome}\n\n"
+            f"【可接受的合法完成路径，命中任一即视为达成预期】\n{bullets}"
+        )
     return ConversationalTestCase(
         turns=turns,
         scenario=golden.get("scenario"),
-        expected_outcome=golden.get("expected_outcome"),
+        expected_outcome=expected_outcome,
         chatbot_role=golden.get("chatbot_role"),
         metadata=metadata,
     )
