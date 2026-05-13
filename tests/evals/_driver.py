@@ -306,6 +306,7 @@ def build_conversational(
                     out = tc.get("output")
                     tool_errors.append(f"{name}: {str(out)[:80]}")
         metadata = {
+            "conv_id": session.conversation_id,
             "mira_warnings": list(session.warnings),
             "mira_tool_errors": tool_errors,
         }
@@ -326,13 +327,26 @@ def build_conversational(
     )
 
 
-def explode_to_llm_cases(turns: list[Turn], scenario: str | None = None) -> list[LLMTestCase]:
+def explode_to_llm_cases(
+    turns: list[Turn],
+    scenario: str | None = None,
+    conv_id: str | None = None,
+) -> list[LLMTestCase]:
     """Pair adjacent user/assistant turns into single-turn LLMTestCases.
 
     Each resulting case represents one assistant reply with its triggering
     user message. Used by safety + answer-relevancy + per-turn judge metrics.
-    `scenario` is stashed in `metadata` for traceability; metrics ignore it.
+    ``scenario`` and ``conv_id`` are stashed in ``metadata``:
+    - ``scenario`` for traceability; built-in metrics ignore it.
+    - ``conv_id`` lets session-level custom metrics locate matching Langfuse
+      traces & DB rows.
     """
+    md: dict[str, str] = {}
+    if scenario:
+        md["scenario"] = scenario
+    if conv_id:
+        md["conv_id"] = conv_id
+
     cases: list[LLMTestCase] = []
     pending_user: Turn | None = None
     for turn in turns:
@@ -344,7 +358,7 @@ def explode_to_llm_cases(turns: list[Turn], scenario: str | None = None) -> list
                 input=pending_user.content,
                 actual_output=turn.content,
                 tools_called=turn.tools_called or None,
-                metadata={"scenario": scenario} if scenario else None,
+                metadata=dict(md) if md else None,
             ))
             pending_user = None
     return cases

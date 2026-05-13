@@ -65,6 +65,7 @@ import test_mira_tooluse as f_tooluse    # type: ignore[import-not-found]
 import test_mira_safety as f_safety      # type: ignore[import-not-found]
 import test_mira_others as f_others      # type: ignore[import-not-found]
 import test_mira_run as f_run            # type: ignore[import-not-found]
+import test_mira_ops as f_ops            # type: ignore[import-not-found]
 
 from deepeval.errors import MissingTestCaseParamsError
 
@@ -77,6 +78,10 @@ DEFAULT_CATEGORIES = ["crm", "voice", "ci_email", "ci_dingding"]
 def _collect_metrics() -> list[tuple[str, str, Any]]:
     """Return (file_label, scope, metric_instance) for every metric in the suite.
     scope = 'multi' (ConversationalTestCase) or 'single' (LLMTestCase per turn).
+
+    The 'ops' bucket holds custom operational metrics (tokens / cost / latency
+    / completion / tool-dependency) — all consume one ConversationalTestCase
+    via duck-typing on metadata.conv_id, so they live under scope='multi'.
     """
     rows: list[tuple[str, str, Any]] = []
     for m in f_run.METRICS:
@@ -332,6 +337,7 @@ class MetricResult:
     error: str | None
     elapsed_s: float
     n_cases: int = 1
+    informational: bool = False  # record-only; not counted toward PASS/FAIL totals
     profile: str = "signal"           # signal | noisy | broken (Layer 1)
     audit_warning: str | None = None  # Layer 2: judge self-contradicted
 
@@ -356,6 +362,7 @@ class GoldenResult:
 
 def _score_one(metric, test_case) -> dict:
     t0 = time.time()
+    informational = bool(getattr(metric, "informational", False))
     try:
         metric.measure(test_case)
         return {
@@ -365,6 +372,7 @@ def _score_one(metric, test_case) -> dict:
             "reason": getattr(metric, "reason", None),
             "error": getattr(metric, "error", None),
             "elapsed": time.time() - t0,
+            "informational": informational,
         }
     except MissingTestCaseParamsError as e:
         # Test case is missing a field this metric needs (e.g.
@@ -378,6 +386,7 @@ def _score_one(metric, test_case) -> dict:
             "reason": f"not applicable: {e}",
             "error": None,
             "elapsed": time.time() - t0,
+            "informational": informational,
         }
     except Exception as e:  # judge crash / parse error / etc.
         return {
@@ -387,6 +396,7 @@ def _score_one(metric, test_case) -> dict:
             "reason": None,
             "error": f"{type(e).__name__}: {e}",
             "elapsed": time.time() - t0,
+            "informational": informational,
         }
 
 
@@ -398,6 +408,11 @@ def _verdict(r: MetricResult) -> str:
     return INCONCLUSIVE instead of the original verdict. INCONCLUSIVE never
     counts toward PASS rate — it's a flag for "this measurement is untrustworthy".
     """
+    # Informational metrics never gate — they're recorded for trend monitoring.
+    # The renderer pulls the raw score/reason; verdict just controls which
+    # bucket (and which icon) the metric lands in.
+    if r.informational:
+        return "INFO"
     if r.error:
         return "ERROR"
     if r.audit_warning:
@@ -539,6 +554,7 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
             print(f"     ⊘ [{file_label:<7}/{scope:<6}] {display:<38}    —      —  SKIP   ({tag})")
             continue
         t1 = time.time()
+        informational = bool(getattr(metric, "informational", False))
         if scope == "multi":
             r = _score_one(metric, conv_case)
             mr = MetricResult(
@@ -550,6 +566,7 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                 audit_warning=_audit_judge_consistency(
                     r["score"], r["threshold"], r["success"], r["reason"]
                 ),
+                informational=informational,
             )
         else:
             if not llm_cases:
@@ -559,6 +576,7 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                     success=None, reason="no assistant turns", error=None,
                     elapsed_s=0.0, n_cases=0,
                     profile=profile,
+                    informational=informational,
                 )
             else:
                 per_case = [_score_one(metric, lc) for lc in llm_cases]
@@ -580,10 +598,11 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
                     n_cases=len(llm_cases),
                     profile=profile,
                     audit_warning=_audit_judge_consistency(avg_score, thr, agg_success, first_reason),
+                    informational=informational,
                 )
         out.metric_results.append(mr)
         verdict = _verdict(mr)
-        flag = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "NONE": "·", "INCONCLUSIVE": "?"}.get(verdict, "?")
+        flag = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "NONE": "·", "INCONCLUSIVE": "?", "INFO": "ℹ"}.get(verdict, "?")
         score_s = f"{mr.score:.2f}" if mr.score is not None else "  —  "
         thr_s = f"≥{mr.threshold:.2f}" if mr.threshold is not None else "    "
         tail = "  " + mr.audit_warning if mr.audit_warning else ""
@@ -596,6 +615,23 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
 
 def _fmt_score(s: float | None) -> str:
     return f"{s:.2f}" if isinstance(s, (int, float)) else "—"
+
+
+def _fmt_threshold(thr: float | None, informational: bool = False) -> str:
+    """Render a threshold cell — empty for informational / inf / None.
+
+    Informational metrics inherit a numeric default threshold from their
+    subclass (e.g. TokensMetric defaults to 200_000), but the value is
+    meaningless when the metric never gates — render it as "—" so readers
+    don't mistake it for an active limit.
+    """
+    if informational:
+        return "—"
+    if thr is None:
+        return "—"
+    if isinstance(thr, float) and (thr == float("inf") or thr != thr):  # noqa: PLR0124 NaN check
+        return "—"
+    return f"≥{thr:.2f}"
 
 
 def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
@@ -624,8 +660,18 @@ def write_json(results: list[GoldenResult], out_path: Path, meta: dict) -> None:
                         "metric": mr.metric,
                         "cls": mr.cls,
                         "profile": mr.profile,
+                        "informational": mr.informational,
                         "score": (float(mr.score) if mr.score is not None else None),
-                        "threshold": (float(mr.threshold) if mr.threshold is not None else None),
+                        # Drop threshold for informational metrics: the subclass
+                        # may carry a stale default (e.g. TokensMetric=200_000)
+                        # but the metric never gates, so the value is misleading.
+                        "threshold": (
+                            None
+                            if mr.informational
+                            or mr.threshold is None
+                            or mr.threshold == float("inf")
+                            else float(mr.threshold)
+                        ),
                         "success": mr.success,
                         "verdict": _verdict(mr),
                         "audit_warning": mr.audit_warning,
@@ -651,8 +697,9 @@ def _aggregate_metric(results: list[GoldenResult]) -> list[dict]:
             key = f"{mr.file}/{mr.metric}"
             d = by_metric.setdefault(key, {
                 "file": mr.file, "metric": mr.metric, "cls": mr.cls,
-                "scores": [], "pass": 0, "fail": 0, "error": 0, "none": 0,
+                "scores": [], "pass": 0, "fail": 0, "error": 0, "none": 0, "info": 0,
                 "threshold": mr.threshold,
+                "informational": mr.informational,
             })
             v = _verdict(mr)
             d[v.lower()] = d.get(v.lower(), 0) + 1
@@ -664,12 +711,25 @@ def _aggregate_metric(results: list[GoldenResult]) -> list[dict]:
         rows.append({
             "file": d["file"], "metric": d["metric"], "cls": d["cls"],
             "avg_score": avg, "threshold": d["threshold"],
+            "informational": d["informational"],
             "pass": d.get("pass", 0), "fail": d.get("fail", 0),
             "error": d.get("error", 0), "none": d.get("none", 0),
+            "info": d.get("info", 0),
         })
-    # Sort: most failures first, then by file
-    rows.sort(key=lambda r: (-(r["fail"] + r["error"]), r["file"], r["metric"]))
+    # Sort: most failures first, info-only metrics last
+    rows.sort(key=lambda r: (
+        r["informational"],
+        -(r["fail"] + r["error"]),
+        r["file"],
+        r["metric"],
+    ))
     return rows
+
+
+# Metric buckets whose `score` is NOT a 0-1 quality measure — these get a
+# PASS/FAIL count but are excluded from the category-level `avg_score`
+# rollup (mixing tokens=12345 with relevancy=0.87 would be nonsense).
+_NON_QUALITY_BUCKETS: frozenset[str] = frozenset({"ops"})
 
 
 def _aggregate_category(results: list[GoldenResult]) -> list[dict]:
@@ -678,14 +738,17 @@ def _aggregate_category(results: list[GoldenResult]) -> list[dict]:
         cat = gr.category or "(uncat)"
         d = by_cat.setdefault(cat, {
             "category": cat, "n_goldens": 0,
-            "pass": 0, "fail": 0, "error": 0, "none": 0,
+            "pass": 0, "fail": 0, "error": 0, "none": 0, "info": 0,
             "scores": [],
         })
         d["n_goldens"] += 1
         for mr in gr.metric_results:
             v = _verdict(mr).lower()
             d[v] = d.get(v, 0) + 1
-            if mr.score is not None:
+            # Skip non-quality buckets from the avg — absolute values
+            # (tokens, USD, seconds) don't share a scale with 0-1 quality
+            # scores and would skew the mean.
+            if mr.score is not None and mr.file not in _NON_QUALITY_BUCKETS:
                 d["scores"].append(mr.score)
     rows = []
     for d in by_cat.values():
@@ -773,35 +836,44 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     cat_rows = _aggregate_category(results)
     add(f"## 按类别汇总")
     add("")
-    add("| 类别 | Goldens | 平均分 | PASS | FAIL | ERROR | NONE |")
-    add("|---|---:|---:|---:|---:|---:|---:|")
+    add("| 类别 | Goldens | 平均分 | PASS | FAIL | ERROR | NONE | INFO |")
+    add("|---|---:|---:|---:|---:|---:|---:|---:|")
     for r in cat_rows:
-        add(f"| `{r['category']}` | {r['n_goldens']} | {_fmt_score(r['avg_score'])} | {r.get('pass',0)} | {r.get('fail',0)} | {r.get('error',0)} | {r.get('none',0)} |")
+        add(
+            f"| `{r['category']}` | {r['n_goldens']} | {_fmt_score(r['avg_score'])} | "
+            f"{r.get('pass',0)} | {r.get('fail',0)} | {r.get('error',0)} | "
+            f"{r.get('none',0)} | {r.get('info',0)} |"
+        )
     add("")
 
     # ── PER-GOLDEN ROLLUP ──────────────────────────────────────────────────
     add(f"## 按用例汇总")
     add("")
-    add("| # | 类别 | Tier | 场景 | Mira 耗时 | 工具调用 | PASS / FAIL / ERR |")
+    add("| # | 类别 | Tier | 场景 | Mira 耗时 | 工具调用 | PASS / FAIL / ERR / INFO |")
     add("|---:|:---:|:---:|---|---:|---:|---|")
     for gr in results:
         p = sum(1 for mr in gr.metric_results if _verdict(mr) == "PASS")
         f = sum(1 for mr in gr.metric_results if _verdict(mr) == "FAIL")
         e = sum(1 for mr in gr.metric_results if _verdict(mr) == "ERROR")
+        i = sum(1 for mr in gr.metric_results if _verdict(mr) == "INFO")
         cat = gr.category or "—"
         scenario_short = (gr.scenario or "")[:60]
-        add(f"| {gr.index} | `{cat}` | {gr.tier or '—'} | {scenario_short} | {gr.mira_elapsed_s:.0f}s | {gr.n_tool_calls} | {p} / {f} / {e} |")
+        add(f"| {gr.index} | `{cat}` | {gr.tier or '—'} | {scenario_short} | {gr.mira_elapsed_s:.0f}s | {gr.n_tool_calls} | {p} / {f} / {e} / {i} |")
     add("")
 
     # ── PER-METRIC ROLLUP ──────────────────────────────────────────────────
     metric_rows = _aggregate_metric(results)
     add(f"## 按指标汇总")
     add("")
-    add("| 文件 | 指标 | 平均分 | 阈值 | PASS | FAIL | ERROR | NONE |")
-    add("|---|---|---:|---:|---:|---:|---:|---:|")
+    add("| 文件 | 指标 | 类型 | 平均值 | 阈值 | PASS | FAIL | ERROR | NONE | INFO |")
+    add("|---|---|:---:|---:|---:|---:|---:|---:|---:|---:|")
     for r in metric_rows:
-        thr = f"≥{r['threshold']:.2f}" if r['threshold'] is not None else "—"
-        add(f"| `{r['file']}` | `{r['metric']}` | {_fmt_score(r['avg_score'])} | {thr} | {r['pass']} | {r['fail']} | {r['error']} | {r['none']} |")
+        kind = "ℹ" if r["informational"] else "gate"
+        thr = _fmt_threshold(r["threshold"], r["informational"])
+        add(
+            f"| `{r['file']}` | `{r['metric']}` | {kind} | {_fmt_score(r['avg_score'])} | "
+            f"{thr} | {r['pass']} | {r['fail']} | {r['error']} | {r['none']} | {r['info']} |"
+        )
     add("")
 
     # ── DETAILED PER-GOLDEN BLOCKS ─────────────────────────────────────────
@@ -857,7 +929,12 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
             add(f"| `{mr.file}` | `{mr.metric}` | {prof_badge} | {score} | {thr} | {badge} | {mr.elapsed_s:.1f}s |")
         add("")
 
-        non_pass = [mr for mr in gr.metric_results if _verdict(mr) != "PASS"]
+        # Pull out gating failures only. INFO is record-only by design, so
+        # it would be noise in this block.
+        non_pass = [
+            mr for mr in gr.metric_results
+            if _verdict(mr) not in ("PASS", "INFO")
+        ]
         if non_pass:
             add("<details><summary>非 PASS 项的 reason / error / audit</summary>")
             add("")
@@ -875,6 +952,25 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
                 if mr.reason:
                     reason = mr.reason.replace("\n", " ").strip()[:600]
                     add(f"  - 💬 reason: {reason}")
+            add("")
+            add("</details>")
+            add("")
+
+        # INFO metrics (tokens / cost / latency) — show the raw recorded
+        # values in a collapsed block so trends are easy to skim without
+        # bloating the main verdict table.
+        info_rows = [mr for mr in gr.metric_results if _verdict(mr) == "INFO"]
+        if info_rows:
+            add("<details><summary>ℹ 仅记录的指标（不参与判定）</summary>")
+            add("")
+            for mr in info_rows:
+                score = _fmt_score(mr.score)
+                bits = [f"- **`{mr.metric}`** = {score}"]
+                if mr.reason:
+                    bits.append(f"_{mr.reason.replace(chr(10), ' ').strip()[:300]}_")
+                if mr.error:
+                    bits.append(f"⚠ {mr.error[:200]}")
+                add("  ".join(bits))
             add("")
             add("</details>")
             add("")
@@ -991,12 +1087,16 @@ def main() -> None:
     n_fail = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "FAIL")
     n_err = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "ERROR")
     n_none = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "NONE")
-    total = n_pass + n_fail + n_err + n_none
+    n_info = sum(1 for gr in results for mr in gr.metric_results if _verdict(mr) == "INFO")
+    gated_total = n_pass + n_fail + n_err + n_none
 
     print()
     print("=" * 80)
     print(f"DONE in {total_elapsed:.0f}s ({len(results)} goldens × {n_metrics} metrics = {len(results)*n_metrics} measurements)")
-    print(f"PASS={n_pass}  FAIL={n_fail}  ERROR={n_err}  NONE={n_none}  ({(n_pass/total*100) if total else 0:.1f}% pass)")
+    print(
+        f"PASS={n_pass}  FAIL={n_fail}  ERROR={n_err}  NONE={n_none}  INFO={n_info}  "
+        f"({(n_pass/gated_total*100) if gated_total else 0:.1f}% pass, INFO excluded)"
+    )
     print()
     print(f"📊 Markdown report : {md_path}")
     print(f"🧾 JSON1 details    : {json_path}")
