@@ -45,16 +45,51 @@ _CLI_ASEMAPHORE: Optional[asyncio.Semaphore] = None  # lazily created per loop
 DEBUG_DIR = Path(os.environ.get("CLAUDE_JUDGE_DEBUG_DIR", "/tmp/claude_judge_debug"))
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
+# Global language directive appended to every judge prompt. The DeepEval
+# templates are hardcoded English, so without this judges return English-only
+# reason text — fine technically but unfriendly for our Chinese users. We
+# append a single Chinese language preference instead of forking templates.
+#
+# Critical caveats:
+#   - JSON keys (`score`, `verdict`, `reason`, `verdicts`, ...) MUST stay
+#     unchanged English or DeepEval's schema parser breaks.
+#   - JSON enum values (`"yes"` / `"no"` for verdicts) MUST stay English for
+#     the same reason — DeepEval matches them with `verdict.strip().lower()`.
+#   - Only the free-text `reason` value should be in Chinese.
+#
+# Override with JUDGE_LANG=en (or unset CLAUDE_JUDGE_REASON_LANG_INJECTION=0)
+# if you ever need raw English reasons (e.g. comparing to upstream defaults).
+_REASON_LANG = os.environ.get("JUDGE_LANG", "zh").lower()
+_INJECT_LANG = os.environ.get("CLAUDE_JUDGE_REASON_LANG_INJECTION", "1") == "1"
+
+_LANG_DIRECTIVE_ZH = (
+    "\n\n---\n"
+    "OUTPUT LANGUAGE: 请用简体中文撰写所有自由文本字段（特别是 `reason` 字段）。\n"
+    "硬性约束：\n"
+    "  - JSON 键名（如 score / verdict / reason / verdicts / statements）必须保持英文，原样不变；\n"
+    "  - JSON 枚举值（如 verdict 的 'yes'/'no'、'PASS'/'FAIL'）必须保持英文，原样不变；\n"
+    "  - 只把 `reason` / 解释性 string value 翻译成简体中文；\n"
+    "  - 不输出英文 reason，不输出多语言混杂的 reason；\n"
+    "  - 仍然只返回一个合法 JSON 对象，无 prose、无 markdown 代码围栏。\n"
+)
+
+
+def _maybe_inject_lang(prompt: str) -> str:
+    if _INJECT_LANG and _REASON_LANG.startswith("zh"):
+        return prompt + _LANG_DIRECTIVE_ZH
+    return prompt
+
 
 def _build_schema_prompt(prompt: str, schema: Type[BaseModel]) -> str:
     schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
-    return (
+    base = (
         f"{prompt}\n\n"
         "---\n"
         "Respond with ONLY a single JSON object that conforms to this JSON Schema. "
         "No prose, no markdown fences, no explanation outside the JSON.\n\n"
         f"JSON Schema:\n{schema_json}\n"
     )
+    return _maybe_inject_lang(base)
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
@@ -97,7 +132,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
 
     # ---- sync ----------------------------------------------------------------
     def generate(self, prompt: str, schema: Optional[Type[BaseModel]] = None, **_: Any):
-        full_prompt = _build_schema_prompt(prompt, schema) if schema else prompt
+        full_prompt = _build_schema_prompt(prompt, schema) if schema else _maybe_inject_lang(prompt)
         last_err: Optional[str] = None
         last_stdout = ""
         for attempt in range(1, MAX_RETRIES + 1):
@@ -139,7 +174,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
 
     # ---- async ---------------------------------------------------------------
     async def a_generate(self, prompt: str, schema: Optional[Type[BaseModel]] = None, **_: Any):
-        full_prompt = _build_schema_prompt(prompt, schema) if schema else prompt
+        full_prompt = _build_schema_prompt(prompt, schema) if schema else _maybe_inject_lang(prompt)
         global _CLI_ASEMAPHORE
         if _CLI_ASEMAPHORE is None:
             _CLI_ASEMAPHORE = asyncio.Semaphore(1)
