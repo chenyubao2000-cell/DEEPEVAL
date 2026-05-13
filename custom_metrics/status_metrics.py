@@ -27,6 +27,7 @@ off a report at a glance.
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -34,7 +35,7 @@ from typing import Any
 from deepeval.metrics import BaseConversationalMetric
 
 from ._base import get_conv_id
-from ._db import fetch_messages
+from ._db import fetch_messages, get_conn
 from ._langfuse import fetch_session_traces, hydrate_trace
 
 
@@ -45,6 +46,47 @@ _VALID_LAST_PART_TYPES = {"tool-clarify_question", "tool-confirm"}
 # Substrings in MiraSession.warnings that we treat as hard failures.
 # Keep this list small and explicit; other warnings are informational.
 _FATAL_WARNING_SUBSTRS: tuple[str, ...] = ("stream_truncated",)
+
+
+# One-shot probe result, populated on first persistence-layer call.
+# (available: bool, reason: str | None)
+_DB_PROBE: tuple[bool, str | None] | None = None
+
+
+def _persistence_available() -> tuple[bool, str | None]:
+    """Probe ``TEST_DATABASE_URL`` once and cache the verdict.
+
+    Decision matrix:
+
+      - URL not set / blank   → (False, "not configured")
+      - URL set but ``SELECT 1`` fails (DNS, auth, IP-whitelist, etc.)
+                              → (False, "unreachable: <err>")
+      - URL set and reachable → (True, None)
+
+    Cached for the process lifetime — if you ``unset TEST_DATABASE_URL``
+    or fix a firewall rule mid-run, restart pytest to re-probe. The
+    caller (``_check_persistence``) turns ``(False, why)`` into a
+    skipped layer so the metric is not penalised when running against
+    an environment that simply has no PG to check.
+    """
+    global _DB_PROBE
+    if _DB_PROBE is not None:
+        return _DB_PROBE
+
+    url = (os.environ.get("TEST_DATABASE_URL") or "").strip()
+    if not url:
+        _DB_PROBE = (False, "TEST_DATABASE_URL not configured")
+        return _DB_PROBE
+
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        _DB_PROBE = (True, None)
+    except Exception as e:  # noqa: BLE001 — any connect/auth/network failure
+        _DB_PROBE = (False, f"DB unreachable: {type(e).__name__}: {str(e)[:120]}")
+    return _DB_PROBE
 
 
 @dataclass
@@ -300,10 +342,17 @@ def _check_persistence(
     Retry: up to ``attempts`` validations, ``base_delay`` × 2^i seconds
     between (default 1.5s, 3s, 6s ≈ 10s total upper bound). Returns as
     soon as a pass occurs.
+
+    Skips (rather than fails) when ``TEST_DATABASE_URL`` is unset or
+    unreachable from this host — see ``_persistence_available``.
     """
     conv_id = get_conv_id(test_case)
     if not conv_id:
         return _CheckResult("persistence", "skipped", "no conv_id on metadata")
+
+    ok, why = _persistence_available()
+    if not ok:
+        return _CheckResult("persistence", "skipped", why or "DB not configured")
 
     last_issues: list[str] = []
     last_pair_count = 0

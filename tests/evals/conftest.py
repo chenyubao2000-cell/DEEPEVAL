@@ -6,6 +6,12 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Import the env loader *before* pytest discovers test files. _env.py sets
+# DEEPEVAL_DISABLE_DOTENV=1 at module-import time, which stops deepeval's
+# package init from silently loading the project-root `.env` and shadowing
+# whatever the user's `--env <name>` selection actually configured.
+from tests.evals import _env  # noqa: F401
+
 
 def pytest_configure(config):
     """Print the active metric/file allowlist so the run config is visible.

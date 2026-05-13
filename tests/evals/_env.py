@@ -20,6 +20,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Stop deepeval >= 4.0 from auto-loading the project-root `.env` when it's
+# imported. Without this, `--env mina` runs would silently inherit `.env`'s
+# TEST_DATABASE_URL (Railway preview PG) even though `.env.mina` doesn't
+# declare one — see investigation 2026-05-13. Must be set BEFORE any
+# `import deepeval` happens, which is why it lives at the very top of the
+# env loader (every entry point imports this module early).
+os.environ.setdefault("DEEPEVAL_DISABLE_DOTENV", "1")
+
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
