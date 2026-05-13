@@ -26,9 +26,17 @@ cd DEEPEVAL
 
 需要 **Python ≥ 3.11**。建议用项目内 venv：
 
+**一键安装（推荐）：**
+
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+```
+
+或手动 pin：
+
+```bash
 .venv/bin/pip install \
   deepeval==4.0.0 \
   httpx==0.28.1 \
@@ -193,6 +201,28 @@ export MIRA_ENV=staging
 ```
 
 输出：每条 golden 一个 section，逐指标左右并列，Δ 列按 |Δ| < 0.10 / 0.10-0.30 / ≥ 0.30 上色，分别标识噪声 / 轻微漂移 / 显著进步或退步。
+对比 HTML 默认带「📖 指标说明」展开表 + 末尾「每个环境的问题清单」。
+
+### 7.4 离线刷新历史报告（无判官调用）
+
+升级 audit 规则、metric profile、或想给老报告批量补分享链接时：
+
+```bash
+# 用最新 audit 重判定，原地更新
+.venv/bin/python replay_audit.py reports/cci-mina.json
+
+# 同时刷新 .md / .html
+.venv/bin/python replay_audit.py reports/cci-mina.json --render
+
+# 给没有 share_url 的 golden 批量补创建公开分享链接
+.venv/bin/python replay_audit.py reports/cci-mina.json --add-share-urls --render --env mina
+
+# 批量处理
+.venv/bin/python replay_audit.py 'reports/cci-*.json' --render
+```
+
+**不会做**：重新调 Mira / 重新调 judge / 改变 expected_outcome。只对 JSON 里已存的
+score+reason 用最新规则重判定。dataset/expected_outcome 变了仍需重跑评测。
 
 ### 7.4 pytest 标准 CI 流（按 metric 文件分套件）
 
@@ -231,11 +261,13 @@ MIRA_ENV=staging .venv/bin/python -m pytest tests/evals -v
 ```
 DEEPEVAL/
 ├── mira_client.py              # SSE 客户端 + 文件上传 + HITL auto-approve
-├── claude_cli_judge.py         # 本地 claude CLI 包装成 DeepEval judge（stdin 输入,无 argv 长度限制）
-├── report.py                   # 多 golden × 17 指标主入口
-├── compare_reports.py          # 两份 JSON → 横向对比 HTML
+├── claude_cli_judge.py         # 本地 claude CLI 包装成 DeepEval judge（stdin 输入,无 argv 长度限制；默认强制中文 reason）
+├── report.py                   # 多 golden × 17 指标主入口（含 metric profile / audit / 分层渲染 / share-URL）
+├── compare_reports.py          # 两份 JSON → 横向对比 HTML（含指标说明 + 按环境问题清单）
 ├── md_to_html.py               # 单份 Markdown → 样式化 HTML
+├── replay_audit.py             # 用最新 audit/verdict/share-URL 规则刷新历史 JSON 报告（不重调 judge）
 ├── healthcheck.py              # 单 golden 全指标体检
+├── requirements.txt            # 一键 pip install -r 的依赖清单
 ├── .env.preview                # 默认环境配置（或保留旧 .env 作 fallback）
 ├── .env.staging                # 其他环境按需
 ├── .cache/                     # 运行时生成，每环境一份工具注册表（gitignored）

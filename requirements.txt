@@ -1,0 +1,26 @@
+# Pinned dependency set for the Mira eval harness.
+# Updated 2026-05-13. Versions match what's been validated on macOS Python 3.12.
+#
+# Install with:  .venv/bin/pip install -r requirements.txt
+# Refresh pin :  .venv/bin/pip install --upgrade <pkg> && pip freeze > /tmp/x
+#               (then copy the version lines you actually use)
+
+# ── Core eval framework ────────────────────────────────────────────────────
+deepeval==4.0.0
+pytest==9.0.3
+
+# ── HTTP + env ─────────────────────────────────────────────────────────────
+httpx==0.28.1
+python-dotenv==1.2.2
+pydantic==2.13.4
+
+# ── Markdown → HTML renderer (md_to_html.py / compare_reports.py 依赖) ─────
+markdown-it-py==4.2.0
+
+# ── Langfuse SDK (report.py 跑完第一条 golden 后从 trace 拉 tool registry) ──
+# 4.6.1 验证可用；后续 4.x 兼容。
+langfuse>=4.6,<5.0
+
+# NOTE: `claude` CLI 不通过 pip 安装，单独 `brew install claude` 或参考
+# Anthropic 官方文档。所有 judge 调用都走 CLI subprocess，没有走 anthropic
+# Python SDK，故 anthropic 不需要在这里。
