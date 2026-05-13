@@ -399,7 +399,8 @@ th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
 .issue-card.err { border-left-color: var(--err); }
 .issue-card .issue-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
 .issue-card .issue-scenario { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-.issue-card .issue-reason { color: var(--fg); line-height: 1.5; }
+.issue-card .issue-desc { color: var(--fg); font-size: 12.5px; padding: 6px 10px; background: var(--code-bg); border-radius: 4px; margin: 4px 0; line-height: 1.45; }
+.issue-card .issue-reason { color: var(--fg); line-height: 1.5; margin-top: 6px; }
 .issue-card .issue-link { font-size: 12px; margin-top: 6px; }
 .issue-card .issue-link a { color: var(--link); }
 .totals { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 10px; }
@@ -469,7 +470,14 @@ def _env_issue_panel(side: dict, side_label: str) -> str:
             )
             scenario = html_lib.escape((g.get("scenario") or "")[:90])
             scenario_line = f'<div class="issue-scenario">📋 {scenario}</div>' if scenario else ""
-            reason_line = f'<div class="issue-reason">💬 {reason_html}</div>' if reason_html else ""
+            # Inline metric description: don't make the reader hover to learn
+            # what this metric measures.
+            desc_line = (
+                f'<div class="issue-desc">📐 <b>指标含义：</b>{html_lib.escape(desc)}</div>'
+                if desc
+                else ""
+            )
+            reason_line = f'<div class="issue-reason">💬 <b>Judge 判定：</b>{reason_html}</div>' if reason_html else ""
             link = g.get("share_url") or g.get("task_url")
             link_line = ""
             if link:
@@ -478,7 +486,7 @@ def _env_issue_panel(side: dict, side_label: str) -> str:
                     f'查看完整对话</a></div>'
                 )
             issues.append(
-                f'<div class="{cls}">{head}{scenario_line}{reason_line}{link_line}</div>'
+                f'<div class="{cls}">{head}{scenario_line}{desc_line}{reason_line}{link_line}</div>'
             )
 
     if not issues:
@@ -495,7 +503,10 @@ def _env_issue_panel(side: dict, side_label: str) -> str:
 
 
 def _glossary_block() -> str:
-    """A standalone glossary section listing each metric's Chinese explanation."""
+    """A standalone glossary section listing each metric's Chinese explanation.
+    `<details open>` so it's visible by default — readers shouldn't have to
+    click to discover what the metrics mean.
+    """
     rows: list[str] = []
     for label, desc in _METRIC_DESCRIPTIONS.items():
         rows.append(
@@ -503,9 +514,9 @@ def _glossary_block() -> str:
             f"<td>{html_lib.escape(desc)}</td></tr>"
         )
     return (
-        '<details style="margin: 18px 0;">'
+        '<details open style="margin: 18px 0;">'
         '<summary style="cursor:pointer; font-weight:600; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;">'
-        '📖 指标说明（点击展开，共 17 项）'
+        '📖 指标说明（共 17 项，点击折叠）'
         '</summary>'
         '<table style="margin-top: 10px;">'
         '<thead><tr><th style="width: 38%">指标</th><th>说明</th></tr></thead>'
