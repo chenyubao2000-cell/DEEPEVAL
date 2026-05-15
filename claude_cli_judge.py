@@ -34,12 +34,13 @@ CLI_TIMEOUT_S = 240
 MAX_RETRIES = 5
 RETRY_BACKOFF_S = 2.0
 
-# Claude Code keeps state in ~/.claude; concurrent `claude -p` invocations from
-# the same machine can stomp on each other and exit rc=1 with no stderr. We
-# serialize all subprocess calls behind one process-wide lock and one async
-# semaphore so judge calls become sequential regardless of how DeepEval
-# schedules metrics internally.
-_CLI_LOCK = threading.Lock()
+# Cap concurrent `claude -p` at 4. Concurrency is safe on `claude -p`
+# (probed up to N=10, no rc=1, no JSON corruption), but past ~6 in-flight
+# the API rate-limits individual calls from ~6s to ~30s — wall-clock gain
+# flattens. BoundedSemaphore for sync so an over-release would raise
+# loudly; async semaphore is lazily created since it needs a running loop.
+_CLI_CONCURRENCY = 4
+_CLI_SEM = threading.BoundedSemaphore(_CLI_CONCURRENCY)
 _CLI_ASEMAPHORE: Optional[asyncio.Semaphore] = None  # lazily created per loop
 
 DEBUG_DIR = Path(os.environ.get("CLAUDE_JUDGE_DEBUG_DIR", "/tmp/claude_judge_debug"))
@@ -136,7 +137,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
         last_err: Optional[str] = None
         last_stdout = ""
         for attempt in range(1, MAX_RETRIES + 1):
-            with _CLI_LOCK:
+            with _CLI_SEM:
                 # Pipe prompt via stdin, not argv. Tool-rich prompts (78 mira
                 # tools × ~1KB description each) easily exceed Windows's ~32KB
                 # CreateProcess command-line limit otherwise.
@@ -177,7 +178,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
         full_prompt = _build_schema_prompt(prompt, schema) if schema else _maybe_inject_lang(prompt)
         global _CLI_ASEMAPHORE
         if _CLI_ASEMAPHORE is None:
-            _CLI_ASEMAPHORE = asyncio.Semaphore(1)
+            _CLI_ASEMAPHORE = asyncio.Semaphore(_CLI_CONCURRENCY)
         last_err: Optional[str] = None
         for attempt in range(1, MAX_RETRIES + 1):
             async with _CLI_ASEMAPHORE:

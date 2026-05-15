@@ -17,11 +17,13 @@ Scoring (normalised 0-1 unlike Mira_Validation's 0-100):
   violation's ``where`` field. Lenient toward long paths — one violation
   doesn't tank the whole sequence.
 
-Cost: 1 claude CLI call per measure() (~30-60s). The CLI's process-wide
-lock serializes against other Claude-judged metrics.
+Cost: 1 claude CLI call per measure() (~30-60s). The CLI caps concurrency
+at 4 via a semaphore in claude_cli_judge.py, so this metric is safe to run
+under DeepEval's async gathering.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 import re
@@ -218,7 +220,7 @@ class ToolDependencyMetric(BaseMetric):
         verbose_mode: bool = False,
     ) -> None:
         self.threshold = threshold
-        self.async_mode = False  # claude CLI is process-locked serial
+        self.async_mode = True  # claude CLI judge allows 4 concurrent calls
         self.strict_mode = False
         self.verbose_mode = verbose_mode
         self.include_reason = True
@@ -329,4 +331,8 @@ class ToolDependencyMetric(BaseMetric):
         return self.score
 
     async def a_measure(self, test_case: Any, *args: Any, **kwargs: Any) -> float:
-        return self.measure(test_case, *args, **kwargs)
+        # Offload the (still blocking) measure() to a thread so DeepEval's
+        # asyncio.gather can actually parallelize across test cases.
+        # claude_cli_judge's BoundedSemaphore(4) caps the underlying CLI fan-out.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.measure(test_case, *args, **kwargs))

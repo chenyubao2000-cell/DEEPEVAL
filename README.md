@@ -300,7 +300,7 @@ DEEPEVAL/
 
 1. **判官 quota**：判官走本地 `claude` CLI，会消耗你的 Claude Code 配额。8 条 golden × 17 指标 ≈ 136 次 judge 调用 × ~30s，跑久了会撞日额度（错误形如 `claude CLI rc=1; stdout="You've hit your limit · resets 8pm (Asia/Shanghai)"`）。重置后继续跑就行。
 
-2. **判官串行**：`claude_cli_judge.py` 用进程级锁保证 CLI 串行执行（Claude Code 的 `~/.claude` 共享状态对并发不友好）。所以并行加速对 judge 阶段无效。
+2. **判官并发限流**：`claude_cli_judge.py` 用 `BoundedSemaphore(4)` 限制 CLI 同时在跑的实例数。实测 N≤6 完全安全，再多会被 API rate-limit 把单 call 从 ~6s 拖到 ~30s，wall-clock 收益边际递减。如需调整，改 `_CLI_CONCURRENCY` 常量。
 
 3. **判官 prompt 走 stdin**：`claude -p` 通过 stdin 输入 prompt（不是 argv），避开 Windows 32KB 命令行长度限制。工具描述累计可达 100KB+，原 argv 模式会撞 `[WinError 206] 文件名或扩展名太长`。
 
