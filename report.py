@@ -25,6 +25,8 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import copy
 import json
 import os
 import re
@@ -542,7 +544,13 @@ def run_one_golden(idx: int, golden: dict) -> GoldenResult:
         share_url=share_url,
     )
 
-    metric_rows = _collect_metrics()
+    # Deepcopy every metric instance so this golden gets its own state. The
+    # module-level metrics in test_mira_*.py are shared across goldens; when
+    # report runs goldens in parallel, two threads measuring on the same
+    # instance would race on self.score / self.reason / self.evaluation_steps.
+    # Deepcopy is cheap (~10 ms per metric set) and removes the entire class
+    # of races without needing per-metric locks.
+    metric_rows = [(f, s, copy.deepcopy(m)) for f, s, m in _collect_metrics()]
     for file_label, scope, metric in metric_rows:
         display = _metric_label(metric)
         cls = type(metric).__name__
@@ -1018,6 +1026,11 @@ def main() -> None:
                     help="force a Langfuse refresh of the tool-registry cache after the first golden")
     ap.add_argument("--no-langfuse-refresh", action="store_true",
                     help="never query Langfuse; use cache only (offline / CI)")
+    ap.add_argument("--golden-concurrency", type=int,
+                    default=int(os.environ.get("MIRA_GOLDEN_CONCURRENCY", "4")),
+                    help="max goldens to run in parallel after the first one "
+                         "(default: $MIRA_GOLDEN_CONCURRENCY or 4; "
+                         "set to 1 for fully sequential, e.g. when debugging)")
     args = ap.parse_args()
 
     # ── env + cache bootstrap ───────────────────────────────────────────────
@@ -1050,17 +1063,37 @@ def main() -> None:
 
     start = time.time()
     results: list[GoldenResult] = []
-    for i, (idx, g) in enumerate(selected):
-        results.append(run_one_golden(idx, g))
-        # Refresh tool cache after the first golden lands so subsequent goldens
-        # use the up-to-date registry. We only do it once per run.
-        if i == 0 and needs_refresh and results[0].conv_id:
-            print(f"     refreshing tool cache from Langfuse session {results[0].conv_id}...")
-            new_cache = refresh_cache_from_session(results[0].conv_id, env=env)
-            if new_cache:
-                n_tools, tools_source = _install_registry(env)
-                print(f"     ✓ tool cache refreshed: {n_tools} tools")
-                needs_refresh = False  # done
+
+    # Strategy: run the first golden synchronously so we can refresh the tool
+    # cache from its conv_id *before* the rest fire (so they all see the fresh
+    # registry). Then parallelize the remaining goldens — each Mira session is
+    # independent (different conv_id), and judge calls underneath are throttled
+    # by claude_cli_judge's BoundedSemaphore so we don't flood the API.
+    first_idx, first_golden = selected[0]
+    results.append(run_one_golden(first_idx, first_golden))
+    if needs_refresh and results[0].conv_id:
+        print(f"     refreshing tool cache from Langfuse session {results[0].conv_id}...")
+        new_cache = refresh_cache_from_session(results[0].conv_id, env=env)
+        if new_cache:
+            n_tools, tools_source = _install_registry(env)
+            print(f"     ✓ tool cache refreshed: {n_tools} tools")
+            needs_refresh = False
+
+    remaining = selected[1:]
+    if remaining:
+        # Live progress: prints from concurrent goldens will interleave; each
+        # line is self-identifying via the "[idx]" header / 5-space indent.
+        # For a clean per-golden view, read reports/<out>.md after the run.
+        worker_n = min(args.golden_concurrency, len(remaining))
+        print(f"\n──── 并发跑剩下 {len(remaining)} 条 golden（{worker_n} 路并行；输出会交错）────")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_n) as ex:
+            futures = [ex.submit(run_one_golden, idx, g) for idx, g in remaining]
+            for fut in concurrent.futures.as_completed(futures):
+                results.append(fut.result())
+
+    # Sort results back to selected-order so downstream aggregation / report
+    # tables stay in golden-index order (parallel completion order is random).
+    results.sort(key=lambda r: r.index)
 
     total_elapsed = time.time() - start
     mira_total = sum(gr.mira_elapsed_s for gr in results)

@@ -35,12 +35,16 @@ CLI_TIMEOUT_S = 240
 MAX_RETRIES = 5
 RETRY_BACKOFF_S = 2.0
 
-# Cap concurrent `claude -p` at 4. Concurrency is safe on `claude -p`
-# (probed up to N=10, no rc=1, no JSON corruption), but past ~6 in-flight
-# the API rate-limits individual calls from ~6s to ~30s — wall-clock gain
-# flattens. BoundedSemaphore for sync so an over-release would raise
-# loudly; async semaphore is lazily created since it needs a running loop.
-_CLI_CONCURRENCY = 4
+# Cap concurrent `claude -p` at this many. This is a *hard* upper bound on
+# in-flight CLI subprocesses regardless of how many callers exist —
+# parallel goldens in report.py don't multiply this number, they queue
+# against the same semaphore. Probed safe up to N=10 (no rc=1, no JSON
+# corruption), but past ~6 the API rate-limits individual calls from ~6s
+# to ~30s and wall-clock stops improving. N=4 is the sweet spot.
+# Override with CLAUDE_JUDGE_CONCURRENCY env var.
+# BoundedSemaphore for sync so an over-release would raise loudly; async
+# semaphore is lazily created since it needs a running loop.
+_CLI_CONCURRENCY = int(os.environ.get("CLAUDE_JUDGE_CONCURRENCY", "4"))
 _CLI_SEM = threading.BoundedSemaphore(_CLI_CONCURRENCY)
 _CLI_ASEMAPHORE: Optional[asyncio.Semaphore] = None  # lazily created per loop
 
