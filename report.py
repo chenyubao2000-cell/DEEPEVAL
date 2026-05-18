@@ -241,6 +241,81 @@ _METRIC_PROFILE: dict[str, str] = {
 }
 
 
+# ── Reader-facing metric explanations ──────────────────────────────────────
+# What each metric is actually testing, in 1 sentence — surfaced in the
+# report so non-engineer reviewers can read it without context. Keyed by
+# class name OR by "GEval/<rubric>" for ConversationalGEval rubrics.
+_METRIC_EXPLANATIONS: dict[str, str] = {
+    # ops — health + dependency
+    "SessionHealthMetric":
+        "这次会话是否干净跑完：client（SSE/工具错误）+ trace（Langfuse 落盘）"
+        "+ persistence（Postgres 消息表）三层都通过才给 1.0，任何一层失败即 FAIL。",
+    "ToolDependencyMetric":
+        "工具调用顺序是否违反硬约束（例如 people_search 之后必须 complete 收尾、"
+        "generate 之前必须先 search）。LLM-as-judge 评分。",
+    # ops — informational (tokens / cost / latency)
+    "TokensMetric":
+        "整段会话 token 总用量（input + output）。仅记录，不计入 PASS 率。",
+    "SessionCostMetric":
+        "整段会话的 LLM 调用总成本（USD）。仅记录。",
+    "TimeToFirstTokenMetric":
+        "首个 token 的最短到达时间（秒）。仅记录，用于看延迟趋势。",
+    "SessionDurationMetric":
+        "整段 trace 的总耗时（秒）。仅记录。",
+    # e2e — multi-turn quality (DeepEval built-ins)
+    "RoleAdherenceMetric":
+        "助手回复是否始终保持 Mira 的专业 AI 代理角色，没有破人设或跑题。",
+    "GoalAccuracyMetric":
+        "助手的整体行为（计划 + 执行）是否真的完成了用户在 scenario 里要的目标。",
+    # tooluse — DeepEval built-ins
+    "ToolUseMetric":
+        "针对任务，助手选用的工具集合是否合理（选对了工具吗）。",
+    "ArgumentCorrectnessMetric":
+        "每次工具调用的参数是否填对了（参数与输入需求是否匹配）。",
+    # custom GEval rubric
+    "GEval/DeliverableMatchesRequest":
+        "用户在 scenario 里要的具体交付物（PPT/Excel/候选人名单/报告等）"
+        "是否真的产出了，而不只是口头描述。",
+    # noisy — kept for completeness
+    "TopicAdherenceMetric":
+        "对话是否始终围绕给定的话题列表。Mira 场景下判官抖动大，列为 noisy。",
+    "KnowledgeRetentionMetric":
+        "助手是否记住了多轮上下文里的关键信息。单轮 golden 上恒为 0，列为 noisy。",
+}
+
+# 一句话的极简说明，用在「按指标汇总」表的「说明」列，保持列宽。
+_METRIC_TAGLINES: dict[str, str] = {
+    "SessionHealthMetric":             "会话是否干净跑完",
+    "ToolDependencyMetric":            "工具调用顺序是否违规",
+    "TokensMetric":                    "token 总用量",
+    "SessionCostMetric":               "会话总成本（USD）",
+    "TimeToFirstTokenMetric":          "首 token 延迟",
+    "SessionDurationMetric":           "会话总耗时",
+    "RoleAdherenceMetric":             "是否保持 Mira 角色",
+    "GoalAccuracyMetric":              "是否完成用户目标",
+    "ToolUseMetric":                   "工具选择是否合理",
+    "ArgumentCorrectnessMetric":       "工具参数是否正确",
+    "GEval/DeliverableMatchesRequest": "交付物是否真的产出",
+    "TopicAdherenceMetric":            "是否扣住给定话题",
+    "KnowledgeRetentionMetric":        "是否记住上下文",
+}
+
+
+def _explanation_for(metric_name: str) -> str:
+    """Look up the long explanation for a metric label.
+
+    Handles the "GEval/Rubric [Conversational GEval]" suffix that
+    ConversationalGEval metrics carry in their display name.
+    """
+    key = metric_name.split(" [")[0]
+    return _METRIC_EXPLANATIONS.get(key, "")
+
+
+def _tagline_for(metric_name: str) -> str:
+    key = metric_name.split(" [")[0]
+    return _METRIC_TAGLINES.get(key, "—")
+
+
 def _profile_for(metric) -> str:
     """Look up metric's signal profile. Unknown metrics default to 'signal'."""
     label = _metric_label(metric)
@@ -849,6 +924,31 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
         add(f"- `{k}` — _METRIC_PROFILE 标记为 broken")
     add("")
 
+    # ── METRIC EXPLANATIONS ────────────────────────────────────────────────
+    # 只列出本次跑实际产出的 metric — 让读者在看下面 PASS/FAIL 之前先弄清楚
+    # 每个指标在测什么。
+    seen_metrics: dict[str, dict] = {}
+    for gr in results:
+        for mr in gr.metric_results:
+            seen_metrics.setdefault(
+                mr.metric,
+                {"file": mr.file, "informational": mr.informational},
+            )
+    if seen_metrics:
+        add(f"## 指标说明")
+        add("")
+        add(f"> 下面每个指标分别在测什么 —— 看后面的 PASS/FAIL 时对照本节。"
+            f"标 ℹ 的是 informational 指标，仅记录、不进 PASS 率。")
+        add("")
+        add("| 文件 | 指标 | 这个指标在测什么 |")
+        add("|---|---|---|")
+        for name in sorted(seen_metrics, key=lambda n: (seen_metrics[n]["file"], n)):
+            info = seen_metrics[name]
+            desc = _explanation_for(name) or "—"
+            tag = " ℹ" if info["informational"] else ""
+            add(f"| `{info['file']}` | `{name}`{tag} | {desc} |")
+        add("")
+
     # ── PER-CATEGORY ROLLUP ────────────────────────────────────────────────
     cat_rows = _aggregate_category(results)
     add(f"## 按类别汇总")
@@ -882,13 +982,14 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
     metric_rows = _aggregate_metric(results)
     add(f"## 按指标汇总")
     add("")
-    add("| 文件 | 指标 | 类型 | 平均值 | 阈值 | PASS | FAIL | ERROR | NONE | INFO |")
-    add("|---|---|:---:|---:|---:|---:|---:|---:|---:|---:|")
+    add("| 文件 | 指标 | 说明 | 类型 | 平均值 | 阈值 | PASS | FAIL | ERROR | NONE | INFO |")
+    add("|---|---|---|:---:|---:|---:|---:|---:|---:|---:|---:|")
     for r in metric_rows:
         kind = "ℹ" if r["informational"] else "gate"
         thr = _fmt_threshold(r["threshold"], r["informational"])
+        desc = _tagline_for(r["metric"])
         add(
-            f"| `{r['file']}` | `{r['metric']}` | {kind} | {_fmt_score(r['avg_score'])} | "
+            f"| `{r['file']}` | `{r['metric']}` | {desc} | {kind} | {_fmt_score(r['avg_score'])} | "
             f"{thr} | {r['pass']} | {r['fail']} | {r['error']} | {r['none']} | {r['info']} |"
         )
     add("")
@@ -946,20 +1047,17 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
             add(f"| `{mr.file}` | `{mr.metric}` | {prof_badge} | {score} | {thr} | {badge} | {mr.elapsed_s:.1f}s |")
         add("")
 
-        # Pull out gating failures only. INFO is record-only by design, so
-        # it would be noise in this block.
-        non_pass = [
-            mr for mr in gr.metric_results
-            if _verdict(mr) not in ("PASS", "INFO")
-        ]
-        if non_pass:
-            add("<details><summary>非 PASS 项的 reason / error / audit</summary>")
+        # 全部 gate 类指标的 reason / error / audit。PASS 项也展开 ——
+        # 没有判官的解释，读者看不懂分数是怎么来的。INFO 单独有自己的 block。
+        gating = [mr for mr in gr.metric_results if _verdict(mr) != "INFO"]
+        if gating:
+            add("<details><summary>所有指标的 reason / error / audit（点击展开）</summary>")
             add("")
             if url:
                 label = "分享链接（公开访问）" if share else "任务页面（需登录）"
                 add(f"🔗 {label}：<{url}>")
                 add("")
-            for mr in non_pass:
+            for mr in gating:
                 v = _verdict(mr)
                 add(f"- **`{mr.metric}` ({v}, profile={mr.profile})** — score={_fmt_score(mr.score)} thr={_fmt_score(mr.threshold)}")
                 if mr.audit_warning:

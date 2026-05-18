@@ -275,7 +275,18 @@ def render(md_text: str, title: str | None = None) -> str:
     )
     body = md.render(md_text)
 
-    # Open <details> blocks so reasons are searchable / printable without clicking
+    # md-it runs with html=False so reason text with stray <…> stays escaped.
+    # The trade-off: our own `<details><summary>…</summary>` blocks (emitted
+    # verbatim by report.py) also get escaped and wrapped in <p>. Un-escape
+    # them here so the collapsibles work, and drop the <p> wrapper.
+    body = re.sub(
+        r"<p>&lt;details&gt;&lt;summary&gt;(.*?)&lt;/summary&gt;</p>",
+        r"<details open><summary>\1</summary>",
+        body,
+        flags=re.DOTALL,
+    )
+    body = body.replace("<p>&lt;/details&gt;</p>", "</details>")
+    # Belt-and-braces: if md-it ever does let one through raw, still open it.
     body = body.replace("<details>", "<details open>")
 
     # Verdict pills
