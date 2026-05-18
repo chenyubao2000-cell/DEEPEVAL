@@ -45,8 +45,12 @@ ACTIVE_METRICS: frozenset[str] = frozenset({
     # Multi-turn quality (deepeval built-ins)
     "GoalAccuracyMetric",
     "RoleAdherenceMetric",
-    # Tool-use
-    "ToolUseMetric",
+    # Tool-use — ExpectedToolPathGEval (ConversationalGEval driven by
+    # _expected_tools per golden) replaces the old ToolUseMetric. The separate
+    # ArgumentCorrectnessMetric (per-turn) is unchanged — different signal axis
+    # (per-turn arg granularity vs whole-conversation path matching).
+    # See reports/token_audit_report.md for the savings analysis.
+    "GEval/ExpectedToolPath",
     "ArgumentCorrectnessMetric",
     # Custom GEval rubric
     "GEval/DeliverableMatchesRequest",

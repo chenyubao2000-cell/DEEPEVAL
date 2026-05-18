@@ -311,6 +311,12 @@ def build_conversational(
             "mira_warnings": list(session.warnings),
             "mira_tool_errors": tool_errors,
         }
+    # Carry the bootstrapped reference tool path through so
+    # ExpectedToolPathGEval can read it via MultiTurnParams.METADATA.
+    expected_tools = golden.get("_expected_tools") or []
+    if expected_tools:
+        metadata = (metadata or {})
+        metadata["expected_tools"] = expected_tools
     expected_outcome = golden.get("expected_outcome") or ""
     acceptable = golden.get("_acceptable_paths") or []
     if acceptable:

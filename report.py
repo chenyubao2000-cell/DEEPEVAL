@@ -222,7 +222,7 @@ _METRIC_PROFILE: dict[str, str] = {
     "GEval/ProfessionalNoFabrication":  "signal",
     "GEval/DeliverableMatchesRequest":  "signal",
     "GEval/GroundedNoFabrication":      "signal",
-    "ToolUseMetric":                    "signal",
+    "GEval/ExpectedToolPath":           "signal",  # replaced ToolUseMetric
     "ArgumentCorrectnessMetric":        "signal",
     "AnswerRelevancyMetric":            "signal",
     "PromptAlignmentMetric":            "signal",
@@ -995,12 +995,11 @@ def write_markdown(results: list[GoldenResult], out_path: Path, meta: dict) -> N
 # ── main ────────────────────────────────────────────────────────────────────
 
 def _install_registry(env: str) -> tuple[int, str]:
-    """Push the cached tool registry into the driver and ToolUseMetric. Returns
+    """Push the cached tool registry into the driver. Returns
     (tool_count, source_label) for the report header."""
     cached = load_cached(env)
     registry = {t["name"]: t for t in (cached or {}).get("tools", [])}
     set_registry(registry)
-    f_tooluse._patch_tooluse_metrics_in_place(registry)
     if not cached:
         return 0, "(empty: no cache yet)"
     return len(registry), f".cache/tools-{env}.json @ {cached.get('fetched_at','?')}"

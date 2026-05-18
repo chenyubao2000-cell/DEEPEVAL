@@ -14,6 +14,62 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "客户想在美国找一个物流机器人销售，东海岸沿线城市均可。请给出搜索策略和初步候选人画像/名单。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "people_search",
+          "input_parameters": {
+            "query": "logistics robotics sales East Coast USA",
+            "location": "East Coast USA",
+            "keywords": [
+              "logistics robot",
+              "warehouse automation",
+              "AMR",
+              "AGV",
+              "sales"
+            ]
+          },
+          "rationale": "按销售岗位与地域检索候选人"
+        },
+        {
+          "name": "evaluate_people",
+          "input_parameters": {
+            "criteria": [
+              "物流机器人/仓储自动化行业经验",
+              "美国东海岸城市",
+              "销售/BD背景"
+            ]
+          },
+          "rationale": "按行业地域销售维度评估筛选"
+        },
+        {
+          "name": "company_search",
+          "input_parameters": {
+            "query": "logistics robotics companies East Coast USA"
+          },
+          "rationale": "补充目标公司画像辅助定位"
+        },
+        {
+          "name": "generate_people_data",
+          "input_parameters": {
+            "format": "xlsx",
+            "fields": [
+              "姓名",
+              "公司",
+              "职位",
+              "所在城市",
+              "联系方式"
+            ]
+          },
+          "rationale": "生成候选人名单文件"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "东海岸物流机器人销售候选人搜索策略与初步名单"
+          },
+          "rationale": "交付搜索策略与候选名单"
+        }
       ]
     },
     {
@@ -23,6 +79,79 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "请帮我做一个 AI 应用行业的人才供给情况调研，并分析未来 1-2 年内的技能需求发展趋势。要点 + 数据支撑 + 结论。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "crm_get_crm_schema",
+          "input_parameters": {
+            "dictionaries": [
+              "industry",
+              "job_category"
+            ]
+          },
+          "rationale": "获取行业与职类字典定位AI应用"
+        },
+        {
+          "name": "crm_search_lead_positions",
+          "input_parameters": {
+            "keyword": "AI应用",
+            "industry": "人工智能"
+          },
+          "rationale": "检索AI应用相关岗位需求"
+        },
+        {
+          "name": "crm_analyze_lead_positions",
+          "input_parameters": {
+            "keyword": "AI应用",
+            "group_by": [
+              "skill",
+              "city",
+              "salary"
+            ]
+          },
+          "rationale": "统计岗位技能与地域分布"
+        },
+        {
+          "name": "crm_analyze_lead_enterprises",
+          "input_parameters": {
+            "industry": "人工智能",
+            "group_by": [
+              "funding",
+              "size"
+            ]
+          },
+          "rationale": "分析招聘企业供给侧画像"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "AI应用 人才供给 技能趋势 2026-2027"
+          },
+          "rationale": "补充行业研报佐证未来趋势"
+        },
+        {
+          "name": "code_interpreter",
+          "input_parameters": {
+            "code": "汇总数据生成图表与结论"
+          },
+          "rationale": "整合数据制作可视化"
+        },
+        {
+          "name": "sb_docx_create",
+          "input_parameters": {
+            "filename": "AI应用行业人才供给与技能趋势调研.docx"
+          },
+          "rationale": "输出结构化调研报告"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "AI应用行业人才供给与技能趋势调研.docx"
+            ]
+          },
+          "rationale": "交付最终调研文件"
+        }
       ]
     },
     {
@@ -32,6 +161,72 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "帮我看一下广州和深圳两地消费电子行业企业在招岗位数量最多的 10 家公司，并给出招聘合作机会分析和切入策略，用 PPT 展示；排除华为、小米、小鹏、比亚迪等类似大厂。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "crm_get_crm_schema",
+          "input_parameters": {
+            "dictionaries": [
+              "industry",
+              "city"
+            ]
+          },
+          "rationale": "获取行业和城市枚举ID"
+        },
+        {
+          "name": "crm_search_lead_enterprises",
+          "input_parameters": {
+            "industry": "消费电子",
+            "cities": [
+              "广州",
+              "深圳"
+            ],
+            "exclude_keywords": [
+              "华为",
+              "小米",
+              "小鹏",
+              "比亚迪"
+            ],
+            "sort_by": "open_positions_desc",
+            "limit": 10
+          },
+          "rationale": "按招聘量排序找Top10企业"
+        },
+        {
+          "name": "crm_analyze_lead_positions",
+          "input_parameters": {
+            "enterprise_ids": "top10_ids",
+            "group_by": [
+              "enterprise",
+              "job_category"
+            ]
+          },
+          "rationale": "分析各企业岗位结构"
+        },
+        {
+          "name": "crm_search_customers",
+          "input_parameters": {
+            "enterprise_names": "top10_names"
+          },
+          "rationale": "判断是否已有合作历史"
+        },
+        {
+          "name": "sb_pptx_create",
+          "input_parameters": {
+            "file_path": "广深消费电子Top10招聘合作分析.pptx",
+            "content": "Top10企业+招聘分析+合作切入策略"
+          },
+          "rationale": "生成PPT交付物"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "广深消费电子Top10招聘合作分析.pptx"
+            ]
+          },
+          "rationale": "交付PPT文件"
+        }
       ]
     },
     {
@@ -41,6 +236,80 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "帮我分析下面这份简历的优劣势，并在 LinkedIn 上找到 5 个适合该人选的职位，总结合适的职位和发布公司的详细介绍，用 Excel 表格做职位对比，同时加上公司官网、职位链接和发布人 LinkedIn 链接。\n\n简历摘要：\n- 姓名：候选人 A\n- 教育：复旦大学计算机本科，CMU 计算机硕士\n- 工作经历：字节跳动数据科学家 3 年，主导推荐算法 A/B 实验平台；现就职于某独角兽 AI 公司，担任 LLM 应用产品经理 2 年，负责企业知识库 RAG 产品 0->1，年 ARR 增长到 800 万美金。\n- 期望方向：硅谷或新加坡的 AI 应用 PM/创始团队岗位"
+      ],
+      "_expected_tools": [
+        {
+          "name": "search_jobs",
+          "input_parameters": {
+            "keywords": "AI Product Manager LLM RAG",
+            "location": "硅谷 新加坡",
+            "platform": "LinkedIn",
+            "limit": 5
+          },
+          "rationale": "按期望方向在LinkedIn检索5个匹配职位"
+        },
+        {
+          "name": "company_search",
+          "input_parameters": {
+            "queries": [
+              "职位1发布公司",
+              "职位2发布公司",
+              "职位3发布公司",
+              "职位4发布公司",
+              "职位5发布公司"
+            ]
+          },
+          "rationale": "获取发布公司详细介绍与官网"
+        },
+        {
+          "name": "people_search",
+          "input_parameters": {
+            "keywords": "发布人 招聘负责人",
+            "companies": [
+              "职位1公司",
+              "职位2公司",
+              "职位3公司",
+              "职位4公司",
+              "职位5公司"
+            ],
+            "platform": "LinkedIn"
+          },
+          "rationale": "找到5个职位发布人LinkedIn链接"
+        },
+        {
+          "name": "sb_xlsx_create",
+          "input_parameters": {
+            "file_path": "candidate_A_jobs_comparison.xlsx",
+            "content": {
+              "sheets": [
+                {
+                  "name": "简历优劣势"
+                },
+                {
+                  "name": "职位对比",
+                  "columns": [
+                    "职位",
+                    "公司简介",
+                    "官网",
+                    "职位链接",
+                    "发布人LinkedIn"
+                  ]
+                }
+              ]
+            }
+          },
+          "rationale": "生成简历分析与职位对比Excel"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "candidate_A_jobs_comparison.xlsx"
+            ],
+            "summary": "简历分析与5个LinkedIn职位对比表"
+          },
+          "rationale": "交付最终Excel文件"
+        }
       ]
     },
     {
@@ -50,6 +319,34 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "帮我根据下面这份 JD 做一张可以发在朋友圈和 LinkedIn 上、能吸引候选人应聘的招聘图片，再加一小段配套文案。\n\nJD：\n职位：Senior LLM Applied Scientist\n公司：某硅谷 AI 独角兽（C 轮，估值 30 亿美金）\n地点：San Francisco / Remote (US)\n年薪：基本 $260K-$320K + 股票 + 签字费\n要求：博士或硕士（CS/ML），3+ 年 LLM 微调/post-training/RLHF 实战经验，发表过 NeurIPS/ICML/ACL 一作论文优先；熟悉 vLLM、DeepSpeed、SGLang。\n亮点：与世界 Top 实验室合作，自有 5000+ H100 算力。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "sb_image_create",
+          "input_parameters": {
+            "file_path": "recruitment_poster.png",
+            "description": "Senior LLM Applied Scientist 招聘海报，含薪资、地点、要求亮点"
+          },
+          "rationale": "生成朋友圈/LinkedIn 招聘图片"
+        },
+        {
+          "name": "sb_file_create",
+          "input_parameters": {
+            "file_path": "recruitment_copy.md",
+            "content": "配套招聘文案，朋友圈+LinkedIn 双版本"
+          },
+          "rationale": "输出配套文案文本"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "recruitment_poster.png",
+              "recruitment_copy.md"
+            ]
+          },
+          "rationale": "交付图片与文案给用户"
+        }
       ]
     },
     {
@@ -59,6 +356,54 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "调研一下美国硅谷 AI 产品经理的薪酬情况，按级别和公司类型给出薪酬区间。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "美国硅谷 AI 产品经理薪酬 levels.fyi"
+          },
+          "rationale": "检索权威薪酬数据来源"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "Silicon Valley AI Product Manager salary by level FAANG startup"
+          },
+          "rationale": "按级别和公司类型补充数据"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "AI PM compensation OpenAI Google Meta 2025 base bonus equity"
+          },
+          "rationale": "获取头部公司具体薪酬区间"
+        },
+        {
+          "name": "code_interpreter",
+          "input_parameters": {
+            "code": "汇总各级别与公司类型薪酬区间并生成结构化表格"
+          },
+          "rationale": "整理数据为级别×公司类型矩阵"
+        },
+        {
+          "name": "sb_docx_create",
+          "input_parameters": {
+            "filename": "silicon_valley_ai_pm_salary_report.docx",
+            "content": "含级别与公司类型薪酬区间的调研报告"
+          },
+          "rationale": "输出可交付调研报告"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "silicon_valley_ai_pm_salary_report.docx"
+            ],
+            "summary": "硅谷 AI PM 薪酬调研报告"
+          },
+          "rationale": "交付最终文件给用户"
+        }
       ]
     },
     {
@@ -68,6 +413,70 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "客户要开拓东南亚和欧洲市场，想从希音、Capelle、Temu、安克创新、阿里国际站、Shopee、TikTok 找运营和管理人选。请：1）构建合适的人才画像；2）撰写 JD；3）从这几家目标公司中寻访候选人，优先 0->1 经验。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "clarify_question",
+          "input_parameters": {
+            "question": "目标岗位层级、薪资范围、地点偏好等细节确认"
+          },
+          "rationale": "明确人才画像关键约束"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "希音 Capelle Temu 安克 阿里国际站 Shopee TikTok 东南亚欧洲跨境电商运营 0-1经验"
+          },
+          "rationale": "调研目标公司业务与人才特征"
+        },
+        {
+          "name": "sb_docx_create",
+          "input_parameters": {
+            "filename": "talent_profile_and_JD.docx",
+            "content": "人才画像+JD"
+          },
+          "rationale": "输出画像与JD文档"
+        },
+        {
+          "name": "people_search",
+          "input_parameters": {
+            "companies": [
+              "SHEIN",
+              "Capelle",
+              "Temu",
+              "Anker",
+              "阿里国际站",
+              "Shopee",
+              "TikTok"
+            ],
+            "keywords": "东南亚 欧洲 运营 0到1"
+          },
+          "rationale": "按目标公司寻访候选人"
+        },
+        {
+          "name": "evaluate_people",
+          "input_parameters": {
+            "criteria": "0-1经验、东南亚/欧洲市场、运营管理"
+          },
+          "rationale": "按0-1经验优先打分筛选"
+        },
+        {
+          "name": "generate_people_data",
+          "input_parameters": {
+            "filename": "candidates_shortlist.xlsx"
+          },
+          "rationale": "导出候选人清单"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "talent_profile_and_JD.docx",
+              "candidates_shortlist.xlsx"
+            ]
+          },
+          "rationale": "交付画像JD与候选人清单"
+        }
       ]
     },
     {
@@ -77,6 +486,61 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "海尔医疗板块日本分公司要在日本找一个 CEO，要求是日本人。请帮我：1）分析目前海尔医疗在日本的业务情况；2）这个 CEO 职位的重心和可能的要求；3）业务情况对人选招聘有哪些潜在要求；4）写一个分析报告；5）附上 5 位可能合适沟通的人选。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "海尔医疗 日本 业务 分公司"
+          },
+          "rationale": "调研海尔医疗在日本的业务现状"
+        },
+        {
+          "name": "company_search",
+          "input_parameters": {
+            "query": "Haier Medical Japan"
+          },
+          "rationale": "获取海尔医疗日本分公司详细信息"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "日本医疗器械 CEO 招聘 要求"
+          },
+          "rationale": "了解日本医疗行业CEO职位通用要求"
+        },
+        {
+          "name": "people_search",
+          "input_parameters": {
+            "query": "Japanese CEO medical device Japan experience",
+            "location": "Japan"
+          },
+          "rationale": "搜索5位合适的日本籍CEO候选人"
+        },
+        {
+          "name": "evaluate_people",
+          "input_parameters": {
+            "criteria": "日本籍、医疗行业高管经验、CEO级别"
+          },
+          "rationale": "按要求评估筛选候选人"
+        },
+        {
+          "name": "sb_docx_create",
+          "input_parameters": {
+            "file_path": "海尔医疗日本CEO招聘分析报告.docx",
+            "title": "海尔医疗日本分公司CEO招聘分析报告"
+          },
+          "rationale": "生成包含四部分内容的分析报告"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "海尔医疗日本CEO招聘分析报告.docx"
+            ]
+          },
+          "rationale": "交付最终报告文件"
+        }
       ]
     },
     {
@@ -86,6 +550,78 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "国内一家高科技公司想做海外人才引进，希望引入 QS20 院校硕博，本科 985 或 QS20，专业为人工智能、计算机或数学相关，有海外工作经验、特别是在头部 AI 公司工作经历者优先，要求中国籍。请帮我制定一份完整的人才引进计划。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "clarify_question",
+          "input_parameters": {
+            "question": "需明确目标岗位数量、薪酬范围、引进时间表及预算"
+          },
+          "rationale": "高复杂度需求先澄清关键约束"
+        },
+        {
+          "name": "search",
+          "input_parameters": {
+            "query": "QS20 院校 人工智能 计算机 数学 海外华人 头部AI公司 人才引进政策"
+          },
+          "rationale": "调研海外AI人才市场及政策"
+        },
+        {
+          "name": "people_search",
+          "input_parameters": {
+            "query": "Chinese AI researcher QS20 master/PhD working at OpenAI/DeepMind/Anthropic/Google",
+            "filters": {
+              "education": "QS Top20",
+              "nationality": "Chinese"
+            }
+          },
+          "rationale": "定向搜寻目标候选人画像"
+        },
+        {
+          "name": "evaluate_people",
+          "input_parameters": {
+            "criteria": [
+              "QS20硕博",
+              "本科985或QS20",
+              "AI/CS/数学",
+              "海外工作",
+              "头部AI公司",
+              "中国籍"
+            ]
+          },
+          "rationale": "按硬性条件评估候选人匹配度"
+        },
+        {
+          "name": "company_search",
+          "input_parameters": {
+            "query": "top global AI companies OpenAI Anthropic DeepMind Meta FAIR Google Brain"
+          },
+          "rationale": "梳理目标公司清单作为人才来源"
+        },
+        {
+          "name": "sb_docx_create",
+          "input_parameters": {
+            "filename": "海外人才引进计划.docx",
+            "sections": [
+              "背景目标",
+              "画像与硬性条件",
+              "渠道与搜寻策略",
+              "评估与面试流程",
+              "薪酬与落地政策",
+              "时间表与KPI"
+            ]
+          },
+          "rationale": "输出完整人才引进计划文档"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "artifacts": [
+              "海外人才引进计划.docx"
+            ]
+          },
+          "rationale": "交付计划文档收尾"
+        }
       ]
     },
     {
@@ -95,6 +631,75 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "我想和海辰储能这家公司深度合作国内及海外职位的交付。请帮我：1）分析可能的 BD 切入点和相应 BD 策略；2）说明我在职位交付上需要做些什么；3）做成 PDF 报告，最好包含可视化图表方便我直观分析。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "crm_search_lead_enterprises",
+          "input_parameters": {
+            "keyword": "海辰储能"
+          },
+          "rationale": "定位海辰储能企业信息"
+        },
+        {
+          "name": "crm_get_lead_enterprise",
+          "input_parameters": {
+            "enterprise_id": "<海辰储能_id>"
+          },
+          "rationale": "获取公司全貌支撑BD分析"
+        },
+        {
+          "name": "crm_search_lead_positions",
+          "input_parameters": {
+            "enterprise_id": "<海辰储能_id>"
+          },
+          "rationale": "梳理国内外在招职位"
+        },
+        {
+          "name": "crm_analyze_lead_positions",
+          "input_parameters": {
+            "enterprise_id": "<海辰储能_id>",
+            "dimensions": [
+              "city",
+              "job_category",
+              "salary"
+            ]
+          },
+          "rationale": "职位分布可视化数据来源"
+        },
+        {
+          "name": "crm_list_lead_contacts",
+          "input_parameters": {
+            "enterprise_id": "<海辰储能_id>"
+          },
+          "rationale": "识别BD切入关键联系人"
+        },
+        {
+          "name": "sb_image_create",
+          "input_parameters": {
+            "file_path": "haichen_charts.png",
+            "chart_type": "bar"
+          },
+          "rationale": "生成职位分布可视化图表"
+        },
+        {
+          "name": "sb_pdf_create",
+          "input_parameters": {
+            "file_path": "海辰储能BD与交付报告.pdf",
+            "include_images": [
+              "haichen_charts.png"
+            ]
+          },
+          "rationale": "输出含图表的PDF报告"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "files": [
+              "海辰储能BD与交付报告.pdf"
+            ]
+          },
+          "rationale": "交付最终PDF报告"
+        }
       ]
     },
     {
@@ -105,6 +710,71 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "查询上海地区人工智能行业的企业，根据他们的在招职位总结市场招聘需求，识别企业的猎企合作概率。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "crm_get_crm_schema",
+          "input_parameters": {
+            "dictionaries": [
+              "industry",
+              "city"
+            ]
+          },
+          "rationale": "获取行业与城市枚举ID"
+        },
+        {
+          "name": "crm_search_lead_enterprises",
+          "input_parameters": {
+            "city": "上海",
+            "industry": "人工智能",
+            "has_active_positions": true
+          },
+          "rationale": "检索上海AI行业线索企业"
+        },
+        {
+          "name": "crm_analyze_lead_positions",
+          "input_parameters": {
+            "city": "上海",
+            "industry": "人工智能",
+            "group_by": [
+              "job_category",
+              "salary",
+              "experience"
+            ]
+          },
+          "rationale": "汇总在招职位分布看招聘需求"
+        },
+        {
+          "name": "crm_analyze_lead_enterprises",
+          "input_parameters": {
+            "city": "上海",
+            "industry": "人工智能",
+            "group_by": [
+              "company_size",
+              "cooperation_probability"
+            ]
+          },
+          "rationale": "评估企业猎企合作概率分布"
+        },
+        {
+          "name": "sb_xlsx_create",
+          "input_parameters": {
+            "file_path": "上海AI企业市场分析.xlsx",
+            "sheets": [
+              "企业清单",
+              "招聘需求",
+              "合作概率"
+            ]
+          },
+          "rationale": "输出结构化分析报表"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "上海AI企业招聘需求与猎企合作概率分析"
+          },
+          "rationale": "交付最终分析文件"
+        }
       ]
     },
     {
@@ -115,6 +785,64 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "搜索江浙沪企业融资信息，分析出目前什么行业比较受资本青睐。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "crm_get_crm_schema",
+          "input_parameters": {
+            "dictionaries": [
+              "industry",
+              "city"
+            ]
+          },
+          "rationale": "获取行业与城市字典以规范筛选"
+        },
+        {
+          "name": "crm_search_lead_finances",
+          "input_parameters": {
+            "city": [
+              "上海",
+              "江苏",
+              "浙江"
+            ],
+            "date_range": "recent"
+          },
+          "rationale": "检索江浙沪近期融资事件"
+        },
+        {
+          "name": "crm_analyze_lead_enterprises",
+          "input_parameters": {
+            "city": [
+              "上海",
+              "江苏",
+              "浙江"
+            ],
+            "group_by": "industry",
+            "has_financing": true
+          },
+          "rationale": "按行业聚合融资企业分布"
+        },
+        {
+          "name": "code_interpreter",
+          "input_parameters": {
+            "task": "统计各行业融资数量与金额并排序"
+          },
+          "rationale": "量化分析得出受青睐行业"
+        },
+        {
+          "name": "sb_xlsx_create",
+          "input_parameters": {
+            "filename": "江浙沪融资行业分析.xlsx"
+          },
+          "rationale": "输出行业分析表格"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "江浙沪资本青睐行业分析报告"
+          },
+          "rationale": "交付分析结论与文件"
+        }
       ]
     },
     {
@@ -125,6 +853,54 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "明天上午11点给周正雨13732649235打电话进行意向初筛，过程中选择默认场景，推荐美团的运营实习生岗位，地点在上海。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "voice_get_protocol",
+          "input_parameters": {},
+          "rationale": "获取外呼协议提示，必须前置"
+        },
+        {
+          "name": "voice_list_scenarios",
+          "input_parameters": {},
+          "rationale": "列出可选场景供路由"
+        },
+        {
+          "name": "crm_search_lead_positions",
+          "input_parameters": {
+            "keyword": "美团 运营实习生",
+            "city": "上海"
+          },
+          "rationale": "查找美团上海运营实习生岗位"
+        },
+        {
+          "name": "voice_upload_candidate_list",
+          "input_parameters": {
+            "candidates": [
+              {
+                "name": "周正雨",
+                "phone": "13732649235"
+              }
+            ],
+            "scenario": "意向初筛默认场景"
+          },
+          "rationale": "上传候选人电话信息"
+        },
+        {
+          "name": "voice_assign_jobs",
+          "input_parameters": {
+            "scheduled_time": "2026-05-16T11:00:00+08:00",
+            "scenario": "默认意向初筛"
+          },
+          "rationale": "创建明早11点外呼任务"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "已安排明早11点对周正雨的意向初筛外呼"
+          },
+          "rationale": "收尾交付结果"
+        }
       ]
     },
     {
@@ -138,6 +914,42 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "帮我给这些同学打电话确认意向，如果这周额度不够打不完的话，就安排到下周继续。本周的安排在下周1上午11点执行，剩余的安排在下周三上午十点执行。过程中选择默认场景，推荐美团的运营实习生岗位，地点在上海。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "voice_get_protocol",
+          "input_parameters": {},
+          "rationale": "获取外呼协议提示词"
+        },
+        {
+          "name": "voice_list_scenarios",
+          "input_parameters": {},
+          "rationale": "列出可用场景供选择默认"
+        },
+        {
+          "name": "voice_upload_candidate_list",
+          "input_parameters": {
+            "scenario": "默认场景",
+            "job_recommendation": "美团-运营实习生-上海"
+          },
+          "rationale": "上传候选人并配置岗位信息"
+        },
+        {
+          "name": "voice_assign_jobs",
+          "input_parameters": {
+            "batch_1_execute_time": "2026-05-18T11:00:00+08:00",
+            "batch_2_execute_time": "2026-05-20T10:00:00+08:00",
+            "split_by_quota": true
+          },
+          "rationale": "按额度分两批定时外呼"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "外呼任务已按周分批安排"
+          },
+          "rationale": "收尾交付执行结果"
+        }
       ]
     },
     {
@@ -148,6 +960,34 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "查一下今日收到的邮件，判断一下有哪些需要我回复。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "currentDateTime",
+          "input_parameters": {},
+          "rationale": "获取今日日期作为搜索范围"
+        },
+        {
+          "name": "cimail_search_emails",
+          "input_parameters": {
+            "query": "received:today"
+          },
+          "rationale": "搜索今日收到的邮件列表"
+        },
+        {
+          "name": "cimail_read_email",
+          "input_parameters": {
+            "emailId": "<今日邮件ID>"
+          },
+          "rationale": "读取邮件正文判断是否需要回复"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "今日邮件清单及需回复建议"
+          },
+          "rationale": "汇总输出需回复邮件列表"
+        }
       ]
     },
     {
@@ -158,6 +998,19 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "给候选人：周正雨 837649599@qq.com 发一封岗位介绍邮件 内容如下\n\n主题：宝时得（Positec）割草机整机测试工程师 - 诚邀加入\n\n正文：\n\n您好，\n\n我是来自猎头顾问的招聘顾问，目前正在为宝时得集团（Positec Group）寻访一位割草机整机测试工程师，希望借此机会向您介绍这一职位，期待与您进一步探讨。\n\n关于宝时得\n\n宝时得集团成立于1994年，总部位于苏州，是全球领先的电动工具与智能园林设备制造商。旗下拥有WORX威克士、Kress等知名品牌，产品覆盖全球近70个国家和地区。集团在苏州、上海、意大利、澳大利亚设有四大研发中心，拥有600余名研发人员，累计专利超8000项。其智能机器人割草机在欧洲现代渠道市场占有率长期居于全球第一，近期完成了超过2.5亿美元的首轮股权融资，正处于高速发展阶段。\n\n岗位：割草机整机测试工程师\n\n工作地点：苏州\n\n主要职责：\n\n负责机器人割草机整机及核心部件（电机、控制板、传感器、电池系统）的硬件测试方案制定与执行\n设计并搭建功能测试、可靠性测试、环境适应性测试（振动、温湿度、淋雨）及耐久性测试台架\n制定测试规范、测试用例及判定标准，输出完整测试报告与缺陷跟踪记录\n针对AI导航、超声波避障、RTK定位、雨淋传感器等智能模块开展系统级集成验证\n与硬件、固件、结构、质量工程团队协作，推动新产品设计验证（DVT/PVT）与问题闭环\n参与安全认证测试（如CE、UL等），确保产品符合国际标准要求\n支持量产阶段工艺测试评审，保障产品一致性与制造可靠性\n\n任职要求：\n\n本科及以上学历，机械工程、电气工程、机电一体化或相关专业\n3年以上硬件/整机测试经验，有电动工具、智能家居、机器人或户外设备行业背景者优先\n熟悉测试仪器仪表的使用（示波器、万用表、频谱仪等），具备测试夹具设计能力\n了解常见可靠性测试标准及安全认证流程（如IEC、CE、UL）\n具备良好的问题分析与根因定位能力，熟悉8D或FMEA等质量工具\n英语读写能力良好，能够阅读国际标准文件\n\n为什么选择这个机会\n\n宝时得智能割草机器人全球市占率第一，处于行业技术前沿\n完善的技术研发平台，参与从前期设计验证到量产的全链路工作\n国际化团队与视野，产品面向全球市场\n公司刚完成大额融资，处于快速扩张期，个人发展空间显著\n\n如果以上职位与您的职业发展方向契合，欢迎回复此邮件或直接联系我进一步沟通。期待与您交流！\n\n此致\n\nCI Dingding"
+      ],
+      "_expected_tools": [
+        {
+          "name": "cimail_send_email",
+          "input_parameters": {
+            "to": [
+              "837649599@qq.com"
+            ],
+            "subject": "宝时得（Positec）割草机整机测试工程师 - 诚邀加入",
+            "body": "周正雨您好，正文包含公司介绍、岗位职责、任职要求及亮点，落款 CI Dingding"
+          },
+          "rationale": "收件人邮箱已知，直接通过 CI Mail 发送岗位介绍邮件"
+        }
       ]
     },
     {
@@ -174,6 +1027,69 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "创建一个日程 明天下午3点 主题是重塑质量安全 与会人员是与会人为有凌凯、陈玉宝、周正雨。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "currentDateTime",
+          "input_parameters": {},
+          "rationale": "获取当前时间以解析明天"
+        },
+        {
+          "name": "searchUser",
+          "input_parameters": {
+            "queryWord": "有凌凯"
+          },
+          "rationale": "搜索参会人userId"
+        },
+        {
+          "name": "searchUser",
+          "input_parameters": {
+            "queryWord": "陈玉宝"
+          },
+          "rationale": "搜索参会人userId"
+        },
+        {
+          "name": "searchUser",
+          "input_parameters": {
+            "queryWord": "周正雨"
+          },
+          "rationale": "搜索参会人userId"
+        },
+        {
+          "name": "getUserDetailByUserId",
+          "input_parameters": {
+            "userid": "<三人userId>"
+          },
+          "rationale": "获取unionId用于日程参与者"
+        },
+        {
+          "name": "createEvent",
+          "input_parameters": {
+            "calendarId": "primary",
+            "summary": "重塑质量安全",
+            "start": {
+              "dateTime": "2026-05-16T15:00:00+08:00",
+              "timeZone": "Asia/Shanghai"
+            },
+            "attendees": [
+              {
+                "id": "<unionId1>"
+              },
+              {
+                "id": "<unionId2>"
+              },
+              {
+                "id": "<unionId3>"
+              }
+            ]
+          },
+          "rationale": "创建明天下午3点日程"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {},
+          "rationale": "交付日程创建结果"
+        }
       ]
     },
     {
@@ -184,6 +1100,36 @@
       "chatbot_role": "Mira, a professional AI agent that helps users complete real work across research, recruitment, document creation, data/code, browser automation, and professional writing.",
       "user_inputs": [
         "创建两个待办 一个是明天上午9点给候选人王霞打电话沟通面试注意事项 另一个是明天下午3点和甲方沟通招聘名额，敲定求职者入职事宜。"
+      ],
+      "_expected_tools": [
+        {
+          "name": "currentDateTime",
+          "input_parameters": {},
+          "rationale": "获取当前时间以推算明天日期"
+        },
+        {
+          "name": "createTask",
+          "input_parameters": {
+            "subject": "给候选人王霞打电话沟通面试注意事项",
+            "dueTime": "明天上午9点的毫秒时间戳"
+          },
+          "rationale": "创建第一个待办：电话沟通王霞"
+        },
+        {
+          "name": "createTask",
+          "input_parameters": {
+            "subject": "和甲方沟通招聘名额，敲定求职者入职事宜",
+            "dueTime": "明天下午3点的毫秒时间戳"
+          },
+          "rationale": "创建第二个待办：与甲方沟通"
+        },
+        {
+          "name": "complete",
+          "input_parameters": {
+            "summary": "已创建两个钉钉待办"
+          },
+          "rationale": "收尾汇报创建结果"
+        }
       ]
     }
   ]

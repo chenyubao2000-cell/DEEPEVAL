@@ -13,6 +13,7 @@ Trade-offs:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import re
@@ -120,6 +121,80 @@ def _extract_json(text: str) -> str:
     return text
 
 
+# ── token-audit hook ────────────────────────────────────────────────────────
+# When CLAUDE_JUDGE_LOG_PATH is set, every CLI call is routed through
+# `claude -p --output-format json` and the resulting usage block is appended
+# (as one JSONL row) to that path. Each row is attributed to the calling
+# metric via stack walk (looks for the nearest frame whose `self` has the
+# DeepEval BaseMetric duck-type — `.threshold` + `.score`).
+def _audit_log_path() -> Optional[str]:
+    return os.environ.get("CLAUDE_JUDGE_LOG_PATH") or None
+
+
+def _audit_argv() -> list[str]:
+    if _audit_log_path():
+        return [CLAUDE_BIN, "-p", "--output-format", "json"]
+    return [CLAUDE_BIN, "-p"]
+
+
+def _find_calling_metric() -> str:
+    frame = inspect.currentframe()
+    try:
+        depth = 0
+        while frame is not None and depth < 30:
+            obj = frame.f_locals.get("self")
+            if obj is not None:
+                cls_name = type(obj).__name__
+                if cls_name != "ClaudeCliJudge" and hasattr(obj, "threshold") and hasattr(obj, "score"):
+                    name = getattr(obj, "name", None)
+                    if cls_name == "ConversationalGEval" and name:
+                        return f"GEval/{name}"
+                    return cls_name
+            frame = frame.f_back
+            depth += 1
+    finally:
+        del frame
+    return "?"
+
+
+def _audit_unwrap(stdout: str, prompt: str, attempt: int, schema_mode: bool) -> str:
+    """In audit mode: parse JSON output, log usage, return the model response text.
+    Outside audit mode: return stdout unchanged."""
+    path = _audit_log_path()
+    if not path:
+        return stdout
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError:
+        return stdout
+    text = parsed.get("result", "") or ""
+    usage = parsed.get("usage") or {}
+    record = {
+        "ts": time.time(),
+        "metric": _find_calling_metric(),
+        "attempt": attempt,
+        "schema_mode": schema_mode,
+        "prompt_chars": len(prompt),
+        "prompt_bytes": len(prompt.encode("utf-8")),
+        "response_chars": len(text),
+        "response_bytes": len(text.encode("utf-8")),
+        "duration_ms": parsed.get("duration_ms"),
+        "duration_api_ms": parsed.get("duration_api_ms"),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens"),
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens"),
+        "total_cost_usd": parsed.get("total_cost_usd"),
+    }
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return text
+
+
 class ClaudeCliJudge(DeepEvalBaseLLM):
     def __init__(self, model_label: str = "claude-code-cli"):
         self._label = model_label
@@ -142,7 +217,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
                 # tools × ~1KB description each) easily exceed Windows's ~32KB
                 # CreateProcess command-line limit otherwise.
                 result = subprocess.run(
-                    [CLAUDE_BIN, "-p"],
+                    _audit_argv(),
                     input=full_prompt,
                     capture_output=True,
                     text=True,
@@ -153,7 +228,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
                 )
             last_stdout = result.stdout
             if result.returncode == 0:
-                out = result.stdout.strip()
+                out = _audit_unwrap(result.stdout, full_prompt, attempt, schema is not None).strip()
                 if schema is None:
                     return out
                 try:
@@ -185,7 +260,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
                 # See sync path: pipe prompt via stdin to avoid Windows argv
                 # length limit when tool descriptions inflate the prompt.
                 proc = await asyncio.create_subprocess_exec(
-                    CLAUDE_BIN, "-p",
+                    *_audit_argv(),
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -199,7 +274,7 @@ class ClaudeCliJudge(DeepEvalBaseLLM):
                     proc.kill()
                     raise
             if proc.returncode == 0:
-                out = stdout.decode("utf-8", errors="replace").strip()
+                out = _audit_unwrap(stdout.decode("utf-8", errors="replace"), full_prompt, attempt, schema is not None).strip()
                 if schema is None:
                     return out
                 try:
