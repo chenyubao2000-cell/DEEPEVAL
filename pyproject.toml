@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mira-eval"
+version = "0.2.0"
+description = "DeepEval × Mira BFF evaluation harness"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "deepeval==4.0.0",
+    "httpx==0.28.1",
+    "python-dotenv==1.2.2",
+    "pydantic==2.13.4",
+    "markdown-it-py==4.2.0",
+    "langfuse>=4.6,<5.0",
+    "psycopg[binary]>=3.3,<4.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.0.3"]
+
+[project.scripts]
+# Top-level dispatcher — `mira-eval <subcommand>`
+mira-eval = "mira_eval.cli.main:main"
+
+# Flat, one-shot scripts (alias for `mira-eval <subcommand>`)
+mira-eval-run         = "mira_eval.cli.run:main"
+mira-eval-healthcheck = "mira_eval.cli.healthcheck:main"
+mira-eval-compare     = "mira_eval.cli.compare:main"
+mira-eval-html        = "mira_eval.cli.html:main"
+mira-eval-replay      = "mira_eval.cli.replay:main"
+mira-eval-bootstrap   = "mira_eval.cli.bootstrap:main"
+
+[tool.setuptools.packages.find]
+include = ["mira_eval", "mira_eval.*"]
+
+[tool.setuptools.package-data]
+# Default false; data assets live in the top-level `data/` directory and are
+# discovered via the runtime ROOT path, not as package resources.

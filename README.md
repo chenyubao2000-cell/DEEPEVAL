@@ -5,7 +5,7 @@
 
 特性：
 
-- ✅ 一份数据集（`tests/evals/.dataset.json`）驱动 17 个指标 × 多个用例的横向评测
+- ✅ 一份数据集（`data/goldens.json`）驱动 11 个指标 × 多个用例的横向评测
 - ✅ **多环境**（`--env preview|staging|prod`），各自的 BFF / Langfuse / token 隔离配置
 - ✅ **工具清单从 Langfuse 真实 trace 抓取**并缓存（不再写死),首条 golden 后自动 union 更新
 - ✅ 支持 **HITL 自动放过**（`confirm` / `clarify_question` 这类阻塞 tool）
@@ -26,28 +26,25 @@ cd DEEPEVAL
 
 需要 **Python ≥ 3.11**。建议用项目内 venv：
 
-**一键安装（推荐）：**
-
 ```bash
 python3.12 -m venv .venv
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e .
 ```
 
-或手动 pin：
+`pip install -e .` 会按 `pyproject.toml` 装好所有依赖，并把以下命令注册到 `.venv/bin/`：
 
-```bash
-.venv/bin/pip install \
-  deepeval==4.0.0 \
-  httpx==0.28.1 \
-  python-dotenv==1.2.2 \
-  pydantic==2.13.4 \
-  pytest==9.0.3 \
-  markdown-it-py==4.2.0 \
-  langfuse>=4.6
-```
+| 命令 | 作用 |
+|---|---|
+| `mira-eval` | 顶层 dispatcher (`mira-eval run`/`healthcheck`/`compare` 等子命令) |
+| `mira-eval-run` | 多 golden × N 指标主入口 |
+| `mira-eval-healthcheck` | 单 golden 全指标体检 |
+| `mira-eval-compare` | 两份 JSON → 对比 HTML |
+| `mira-eval-html` | Markdown → 样式化 HTML |
+| `mira-eval-replay` | 不重调 judge 刷历史 JSON |
+| `mira-eval-bootstrap` | 给 golden 提名 `_expected_tools` |
 
-> 之后所有命令都用 `.venv/bin/python …`（避免污染系统 Python）。
+> 没装 console_scripts 也行：`.venv/bin/python -m mira_eval.cli.run ...` 等价于 `mira-eval-run ...`。
 
 ## 3. 安装 `claude` CLI
 
@@ -90,11 +87,11 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 
 ```bash
 # CLI 显式指定
-.venv/bin/python report.py --env staging --category voice
+mira-eval run --env staging --category voice
 
-# 或者用环境变量（pytest 流也会读）
+# 或者用环境变量
 export MIRA_ENV=staging
-.venv/bin/python report.py
+mira-eval run
 ```
 
 未传 `--env` 且 `MIRA_ENV` 未设置时，按 `preview` 走。
@@ -114,7 +111,7 @@ export MIRA_ENV=staging
 ## 5. 握手验证
 
 ```bash
-.venv/bin/python -c "from mira_client import MiraSession; s=MiraSession(); print(s.send('请用一句话回答：你是谁？')[:200]); print('warnings:', s.warnings)"
+.venv/bin/python -c "from mira_eval.client import MiraSession; from mira_eval.config import load_env; load_env(); s=MiraSession(); print(s.send('请用一句话回答：你是谁？')[:200]); print('warnings:', s.warnings)"
 ```
 
 成功应该看到一行 Mira 的自我介绍，`warnings: []`。
@@ -123,8 +120,8 @@ export MIRA_ENV=staging
 
 ## 6. 工具注册表缓存（自动）
 
-`ToolUseMetric` 需要知道 "本次会话有哪些工具可用"。我们不再写死这份清单——
-首次跑评测时，`report.py` 在**第一条 golden 跑完后**自动从 Langfuse 拉真实 trace
+`ExpectedToolPathGEval` 等指标需要知道"本次会话有哪些工具可用"。我们不再写死这份清单——
+首次跑评测时，`mira-eval run` 在**第一条 golden 跑完后**自动从 Langfuse 拉真实 trace
 里的工具定义（含 description / inputSchema），union 到 `.cache/tools-<env>.json`，
 后续 golden 复用缓存。
 
@@ -137,7 +134,7 @@ export MIRA_ENV=staging
 - **TTL**：7 天软过期，过期后下次跑会自动 refresh，期间仍用旧缓存
 - **强制刷新**：`--refresh-tools`
 - **完全离线**：`--no-langfuse-refresh`（CI 场景，凭现有缓存跑，无 Langfuse 调用）
-- **首跑没缓存**：第一条 golden 的 `ToolUseMetric` 会以空工具集运行（PASS/FAIL 结果不可信），
+- **首跑没缓存**：第一条 golden 的工具相关指标会以空工具集运行（PASS/FAIL 结果不可信），
   refresh 完成后第二条及之后正常。介意可以先跑一次空 golden 把缓存预热
 
 `tools-<env>.json` 在 `.gitignore` 里，不会污染 git。
@@ -149,31 +146,31 @@ export MIRA_ENV=staging
 ### 7.1 一键完整报告（推荐）
 
 ```bash
-# 默认跑 4 个新类目（crm / voice / ci_email / ci_dingding）共 8 条 golden × 17 指标
-.venv/bin/python report.py
+# 默认跑 4 个新类目（crm / voice / ci_email / ci_dingding）共 8 条 golden × 11 指标
+mira-eval run
 
 # 切环境
-.venv/bin/python report.py --env staging --category voice
+mira-eval run --env staging --category voice
 
 # 强制刷新工具注册表缓存（拉一次 Langfuse 即可，之后复用）
-.venv/bin/python report.py --refresh-tools --category ci_email
+mira-eval run --refresh-tools --category ci_email
 
 # CI 离线模式（绝不调 Langfuse，纯凭本地缓存）
-.venv/bin/python report.py --no-langfuse-refresh --category ci_email
+mira-eval run --no-langfuse-refresh --category ci_email
 
 # 只跑 voice 2 条
-.venv/bin/python report.py --category voice
+mira-eval run --category voice
 
 # 跑全部 18 条 goldens
-.venv/bin/python report.py --all
+mira-eval run --all
 
 # 按 tier / index / scenario 子串过滤
-.venv/bin/python report.py --tier light
-.venv/bin/python report.py --index 12,13
-.venv/bin/python report.py --scenario 钉钉
+mira-eval run --tier light
+mira-eval run --index 12,13
+mira-eval run --scenario 钉钉
 
 # 自定义输出位置
-.venv/bin/python report.py --category voice --out reports/voice-$(date +%Y%m%d-%H%M)
+mira-eval run --category voice --out reports/voice-$(date +%Y%m%d-%H%M)
 ```
 
 报告头部会标出当前环境、BFF、Langfuse 项目以及本次用到的工具数和缓存来源时间，
@@ -187,14 +184,14 @@ export MIRA_ENV=staging
 ### 7.2 转 HTML（带样式）
 
 ```bash
-.venv/bin/python md_to_html.py reports/<name>.md
+mira-eval html reports/<name>.md
 # 生成 reports/<name>.html — 浅深双主题、表头 sticky、PASS/FAIL/ERR 上色 pill
 ```
 
 ### 7.3 两环境横向对比 HTML
 
 ```bash
-.venv/bin/python compare_reports.py \
+mira-eval compare \
   --left  reports/voice-A.json --left-label  "环境 A 短名" \
   --right reports/voice-B.json --right-label "环境 B 短名" \
   -o reports/compare-AB.html
@@ -209,90 +206,90 @@ export MIRA_ENV=staging
 
 ```bash
 # 用最新 audit 重判定，原地更新
-.venv/bin/python replay_audit.py reports/cci-mina.json
+mira-eval replay reports/cci-mina.json
 
 # 同时刷新 .md / .html
-.venv/bin/python replay_audit.py reports/cci-mina.json --render
+mira-eval replay reports/cci-mina.json --render
 
 # 给没有 share_url 的 golden 批量补创建公开分享链接
-.venv/bin/python replay_audit.py reports/cci-mina.json --add-share-urls --render --env mina
+mira-eval replay reports/cci-mina.json --add-share-urls --render --env mina
 
 # 批量处理
-.venv/bin/python replay_audit.py 'reports/cci-*.json' --render
+mira-eval replay 'reports/cci-*.json' --render
 ```
 
 **不会做**：重新调 Mira / 重新调 judge / 改变 expected_outcome。只对 JSON 里已存的
 score+reason 用最新规则重判定。dataset/expected_outcome 变了仍需重跑评测。
 
-### 7.4 pytest 标准 CI 流（按 metric 文件分套件）
+### 7.5 单条 golden × 全部指标的快速体检
 
 ```bash
-# 5 个 metric 文件，按 concern 分类
-.venv/bin/python -m pytest tests/evals/test_mira_e2e.py -v
-.venv/bin/python -m pytest tests/evals/test_mira_custom.py -v
-.venv/bin/python -m pytest tests/evals/test_mira_tooluse.py -v
-.venv/bin/python -m pytest tests/evals/test_mira_safety.py -v
-.venv/bin/python -m pytest tests/evals/test_mira_others.py -v
-
-# 按 tier 过滤
-MIRA_GOLDEN_TIER=light .venv/bin/python -m pytest tests/evals -v
-
-# 切环境（pytest 走环境变量）
-MIRA_ENV=staging .venv/bin/python -m pytest tests/evals -v
-
-# 只跑某条 golden（按 scenario 子串）
-.venv/bin/python -m pytest tests/evals/test_mira_e2e.py -k "Voice 场景 2" -v
-```
-
-> pytest 模式下 `ToolUseMetric.available_tools` 直接读 `.cache/tools-<env>.json`，
-> 没有 `report.py` 的自动 refresh 流。如需更新缓存，先跑一次 `report.py --refresh-tools`。
-
-### 7.5 单条 golden × 全部 17 指标的快速体检
-
-```bash
-.venv/bin/python healthcheck.py --golden 13       # 按 index
-.venv/bin/python healthcheck.py --golden "钉钉"   # 按 scenario 子串
+mira-eval healthcheck --golden 13       # 按 index
+mira-eval healthcheck --golden "钉钉"   # 按 scenario 子串
 ```
 
 ---
 
 ## 8. 项目结构
 
+按 deepeval 上游的 **概念分层** 组织（v0.2 重构 from "all flat in repo root"）：
+
 ```
-DEEPEVAL/
-├── mira_client.py              # SSE 客户端 + 文件上传 + HITL auto-approve
-├── claude_cli_judge.py         # 本地 claude CLI 包装成 DeepEval judge（stdin 输入,无 argv 长度限制；默认强制中文 reason）
-├── report.py                   # 多 golden × 17 指标主入口（含 metric profile / audit / 分层渲染 / share-URL）
-├── compare_reports.py          # 两份 JSON → 横向对比 HTML（含指标说明 + 按环境问题清单）
-├── md_to_html.py               # 单份 Markdown → 样式化 HTML
-├── replay_audit.py             # 用最新 audit/verdict/share-URL 规则刷新历史 JSON 报告（不重调 judge）
-├── healthcheck.py              # 单 golden 全指标体检
-├── requirements.txt            # 一键 pip install -r 的依赖清单
-├── .env.preview                # 默认环境配置（或保留旧 .env 作 fallback）
-├── .env.staging                # 其他环境按需
-├── .cache/                     # 运行时生成，每环境一份工具注册表（gitignored）
-│   └── tools-<env>.json
-└── tests/evals/
-    ├── .dataset.json           # 18 条 customer goldens
-    ├── _env.py                 # 环境加载 + 多 env 选择 + Langfuse client 工厂
-    ├── _langfuse_tools.py      # 从 Langfuse trace 抓工具注册表 + 缓存读写
-    ├── _driver.py              # 共享 driver；把 cached registry 注入到 tool calls
-    ├── test_mira_e2e.py        # 5 个多轮内置 metric
-    ├── test_mira_custom.py     # 3 个多轮 ConversationalGEval
-    ├── test_mira_tooluse.py    # 2 多轮 + 1 单轮工具相关 metric（available_tools 从 cache 读）
-    ├── test_mira_safety.py     # 4 个单轮安全 metric
-    └── test_mira_others.py     # 2 个其它单轮 metric
+mira_eval/                      # 主包
+├── config.py                   # .env.<name> 加载 + ROOT 路径
+├── cli/                        # 6 个 console_script 薄入口
+│   ├── main.py                 #   mira-eval (dispatcher)
+│   ├── run.py / healthcheck.py / compare.py
+│   ├── html.py / replay.py / bootstrap.py
+├── dataset/loader.py           # 加载 data/goldens.json + tier 过滤
+├── client/mira.py              # SSE 客户端 + HITL auto-approve + R2 上传
+├── models/claude_cli.py        # 本地 claude CLI → DeepEval judge
+├── tracing/
+│   ├── langfuse.py             # 拉 trace / tokens / cost / 延迟
+│   └── tool_registry.py        # 工具表抓取 + .cache 读写
+├── persistence/db.py           # Mira Postgres 适配器
+├── evaluate/                   # 主 runner
+│   ├── pipeline.py             # 多 golden × N 指标编排（前 report.py 主体）
+│   ├── driver.py               # golden → ConversationalTestCase
+│   ├── audit.py                # verdict + 一致性 audit + METRIC_PROFILE
+│   ├── compare.py              # 两份 JSON → 横向对比 HTML
+│   └── replay.py               # 不重调 judge 刷历史 JSON
+├── metrics/                    # 每指标一个小包
+│   ├── registry.py / builtins.py
+│   ├── _base.py                # BaseValueMetric / get_conv_id 公用
+│   ├── expected_tool_path/     # ConversationalGEval：工具路径
+│   ├── deliverable_match/      # ConversationalGEval：交付物 + 2 个 rubric
+│   ├── tool_dependency/        # 工具约束 judge metric
+│   ├── session_health/         # 三层 client+trace+db 健康门
+│   ├── usage/                  # tokens + cost
+│   └── perf/                   # ttft + duration + nturns + tok/s
+└── report/                     # 渲染层
+    ├── writers.py              # write_json + write_markdown
+    └── html.py                 # Markdown → 样式化 HTML
+
+data/                           # 数据资产顶层独立
+├── goldens.json                # 18 条 customer goldens
+├── tool_dependencies.json      # ToolDependencyMetric 的约束目录
+└── README.md                   # 字段语义
+
+reports/                        # 报告输出（gitignored 一部分）
+.cache/                         # 运行时工具表缓存（gitignored）
+.env.<env>                      # 多环境配置
+pyproject.toml                  # 包定义 + console_scripts
 ```
 
-### 涉及的 17 个指标
+### 涉及的指标
 
-| 文件 | 指标 |
+| 包路径 | 指标 |
 |---|---|
-| e2e | ConversationCompleteness, TurnRelevancy, KnowledgeRetention, RoleAdherence, GoalAccuracy |
-| custom (ConversationalGEval) | ProfessionalNoFabrication, DeliverableMatchesRequest, GroundedNoFabrication |
-| tooluse | ToolUse, TopicAdherence, ArgumentCorrectness |
-| safety | Bias, Toxicity, PIILeakage, RoleViolation |
-| others | AnswerRelevancy, PromptAlignment |
+| `metrics.builtins.E2E_METRICS` | ConversationCompleteness · TurnRelevancy · KnowledgeRetention · RoleAdherence · GoalAccuracy |
+| `metrics.deliverable_match` | ProfessionalNoFabrication · DeliverableMatchesRequest · GroundedNoFabrication |
+| `metrics.expected_tool_path` + `builtins.TOOLUSE_MULTI_EXTRA` | ExpectedToolPath · TopicAdherence · ArgumentCorrectness |
+| `metrics.builtins.SAFETY_METRICS` | Bias · Toxicity · PIILeakage · RoleViolation |
+| `metrics.builtins.OTHERS_METRICS` | AnswerRelevancy · PromptAlignment |
+| `metrics.session_health` · `metrics.tool_dependency` · `metrics.usage` · `metrics.perf` | SessionHealth · ToolDependency · Tokens · SessionCost · TTFT · SessionDuration · NTurns · OutputTokensPerSec |
+
+默认 `ACTIVE_METRICS` 跑 11 个；其他通过 env `MIRA_METRICS_ALL=1` 或编辑 `metrics/registry.py` 开关。
 
 ---
 
@@ -300,25 +297,25 @@ DEEPEVAL/
 
 1. **判官 quota**：判官走本地 `claude` CLI，会消耗你的 Claude Code 配额。8 条 golden × 17 指标 ≈ 136 次 judge 调用 × ~30s，跑久了会撞日额度（错误形如 `claude CLI rc=1; stdout="You've hit your limit · resets 8pm (Asia/Shanghai)"`）。重置后继续跑就行。
 
-2. **判官并发限流**：`claude_cli_judge.py` 用 `BoundedSemaphore(4)` 限制 CLI 同时在跑的实例数。实测 N≤6 完全安全，再多会被 API rate-limit 把单 call 从 ~6s 拖到 ~30s，wall-clock 收益边际递减。如需调整，改 `_CLI_CONCURRENCY` 常量。
+2. **判官并发限流**：`mira_eval/models/claude_cli.py` 用 `BoundedSemaphore(4)` 限制 CLI 同时在跑的实例数。实测 N≤6 完全安全，再多会被 API rate-limit 把单 call 从 ~6s 拖到 ~30s，wall-clock 收益边际递减。如需调整，改 `_CLI_CONCURRENCY` 常量或设 `CLAUDE_JUDGE_CONCURRENCY` 环境变量。
 
 3. **判官 prompt 走 stdin**：`claude -p` 通过 stdin 输入 prompt（不是 argv），避开 Windows 32KB 命令行长度限制。工具描述累计可达 100KB+，原 argv 模式会撞 `[WinError 206] 文件名或扩展名太长`。
 
-4. **HITL 自动放过**：`mira_client.py` 自动识别 `confirm` / `clarify_question` 这类阻塞 tool 并按 default 值放过，最多 `MAX_APPROVAL_ROUNDS=8`（可用 `MIRA_MAX_APPROVAL_ROUNDS` 环境变量覆盖）。如果你要测「拒绝」路径，调用 `session.send(..., auto_approve=False)`。
+4. **HITL 自动放过**：`mira_eval/client/mira.py` 自动识别 `confirm` / `clarify_question` 这类阻塞 tool 并按 default 值放过，最多 `MAX_APPROVAL_ROUNDS=8`（可用 `MIRA_MAX_APPROVAL_ROUNDS` 环境变量覆盖）。如果你要测「拒绝」路径，调用 `session.send(..., auto_approve=False)`。
 
 5. **文件附件**：在 golden 里加 `"_attachments": ["/abs/path/file.xlsx"]`，driver 会自动用 R2 签名 URL 上传，并把 `[Uploaded File: /mnt/task/upload/<name>|<size>|<r2Key>]` marker 注入到第一条 user message 里——和前端 `task-input.tsx` 行为完全一致。
 
 6. **Mira 非确定性**：同一条 prompt 多次跑可能走不同 agent 路径（少调或多调几个 tool、HITL 轮数变化），分数会抖动。重要结论必须**至少跑 2-3 次取均值**才算可信。
 
 7. **省 token 的两个旋钮**（默认已开启，省 ~50% judge token / 跑）：
-   - **`_MAX_TOOL_OUTPUT_CHARS`**：`tests/evals/_driver.py` 顶部，默认 **1500 字符/工具**（旧版 4000）。多轮 metric 把所有 tool output 拼进 judge prompt，heavy goldens 上 4000 × 19 工具 = 76 KB，撑爆 context。1500 够保留 jobGroupId / 错误信息 / 关键数字。临时调大：`MIRA_MAX_TOOL_OUTPUT_CHARS=4000 .venv/bin/python report.py …`
-   - **`_CATEGORY_DEFAULT_SKIPS`**：`report.py` 中间，按 `_category` 跳过结构性无信号指标。当前默认：
+   - **`_MAX_TOOL_OUTPUT_CHARS`**：`mira_eval/evaluate/driver.py` 顶部，默认 **1500 字符/工具**（旧版 4000）。多轮 metric 把所有 tool output 拼进 judge prompt，heavy goldens 上 4000 × 19 工具 = 76 KB，撑爆 context。1500 够保留 jobGroupId / 错误信息 / 关键数字。临时调大：`MIRA_MAX_TOOL_OUTPUT_CHARS=4000 mira-eval run …`
+   - **`_CATEGORY_DEFAULT_SKIPS`**：`mira_eval/evaluate/pipeline.py` 中间，按 `_category` 跳过结构性无信号指标。当前默认：
      - voice / ci_email / ci_dingding 各跳 5 个：Bias · Toxicity · PIILeakage · RoleViolation · KnowledgeRetention
      - crm 跳 4 个：上面去掉 PIILeakage（CRM 不必然复述 PII）
-     - 旧 10 条研究类 golden（无 `_category`）全跑 17 个
+     - 旧 10 条研究类 golden（无 `_category`）全跑全部指标
    - **覆盖姿势**：在 golden JSON 里加 `"_skip_metrics": ["MetricName1", ...]` 替换默认，或 `"_skip_metrics_extra": [...]` 追加。
 
-7. **工具缓存生命周期**：`.cache/tools-<env>.json` 7 天软过期；每次 `report.py` 跑完第一条 golden 会从 Langfuse union 增量更新（不会清掉旧条目）；Mira 后端加新 MCP 后，下次跑评测自动覆盖到。CI 跑 `--no-langfuse-refresh` 用历史缓存，零外部依赖。
+8. **工具缓存生命周期**：`.cache/tools-<env>.json` 7 天软过期；每次 `mira-eval run` 跑完第一条 golden 会从 Langfuse union 增量更新（不会清掉旧条目）；Mira 后端加新 MCP 后，下次跑评测自动覆盖到。CI 跑 `--no-langfuse-refresh` 用历史缓存，零外部依赖。
 
 8. **`.gitignore` 当前内容**：
    ```
@@ -340,12 +337,12 @@ DEEPEVAL/
 | `http_401: UNAUTHORIZED` | session token 过期 / cookie 跨域 | 重取 token，确认 `MIRA_BFF_URL` 跟登录的前端**同域** |
 | `http_404: <!DOCTYPE html>` | `MIRA_BFF_URL` 多了 `/task` 或别的尾缀 | `MIRA_BFF_URL` 必须是 **host**，不能含 `/api/...` 或 `/task` |
 | `claude CLI rc=1; stdout="You've hit your limit"` | Judge quota 用尽 | 等 quota 重置（每日定时） |
-| `[WinError 206] 文件名或扩展名太长` | 老版本 judge 把 prompt 当 argv 传，被 Windows 命令行长度限制截断 | 已修（改走 stdin）；如再出，确认 `claude_cli_judge.py` 是最新版 |
+| `[WinError 206] 文件名或扩展名太长` | 老版本 judge 把 prompt 当 argv 传，被 Windows 命令行长度限制截断 | 已修（改走 stdin）；如再出，确认 `mira_eval/models/claude_cli.py` 是最新版 |
 | `langfuse.api.commons.errors.unauthorized_error.UnauthorizedError` | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` 任一不匹配 | 检查 `.env.<env>`，三个值必须同属一个 Langfuse 项目 |
 | `env=...: required vars missing: LANGFUSE_HOST` | 用了旧的 `LANGFUSE_BASEURL` 又被环境变量挡住别名 promote | 改成 `LANGFUSE_HOST` 或确认 `.env` 加载顺序 |
-| 首次跑 `ToolUseMetric` 在第一条 golden 上是 NONE / 异常 | `.cache/tools-<env>.json` 还没建立 | 正常，第二条起就有了；介意可以先 `--refresh-tools` |
+| 首次跑 `ExpectedToolPath` 在第一条 golden 上是 NONE / 异常 | `.cache/tools-<env>.json` 还没建立 | 正常，第二条起就有了；介意可以先 `--refresh-tools` |
 | Voice 场景类指标狂 FAIL | 没处理 HITL gate（旧 driver bug） | 已修；如果再出，看 `session.warnings` 是否有 `auto_approve round …` |
-| `TopicAdherence` 0.00 false-negative | `tests/evals/test_mira_tooluse.py:RELEVANT_TOPICS` 没覆盖你的 category | 加一条对应描述进去 |
+| `TopicAdherence` 0.00 false-negative | `mira_eval/metrics/builtins.py:RELEVANT_TOPICS` 没覆盖你的 category | 加一条对应描述进去 |
 | `OSError: /mnt/task/output 不存在` 在 judge reason 里 | Mira 沙箱基础设施 bug，**不是评测问题** | 真实产品缺陷，给 Mira 团队报 |
 
 ---
