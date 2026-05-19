@@ -66,8 +66,9 @@ CLI 必须已经登录（首次运行会引导浏览器登录）。
 每个 Mira 部署（preview / staging / prod / …）有自己的 BFF、token、Langfuse 项目，
 我们用 `.env.<name>` 一个文件一份环境。默认环境名为 `preview`。
 
-仓库根目录创建 **`.env.preview`**（旧版用户保留的 `.env` 会作为 fallback，
-即没有 `.env.<name>` 时自动用 `.env`）：
+仓库根目录创建 **`.env.preview`**（v0.2 之前的单文件 `.env` 已废弃；
+`config.py` 仍保留 `.env` 作为兜底 fallback，但**不建议再用** —— 早期曾因
+`.env` 静默盖过 `.env.<name>` 导致跨环境串值，见 `config.py:23` 的注释）：
 
 ```ini
 # Mira BFF
