@@ -229,6 +229,57 @@ mira-eval healthcheck --golden 13       # 按 index
 mira-eval healthcheck --golden "钉钉"   # 按 scenario 子串
 ```
 
+### 7.6 结果持久化到 MySQL + 跨 run 分析（v0.3+）
+
+在 `.env.<name>` 里加一行就开启数据库持久化（不写也行，本地文件依旧产出）：
+
+```ini
+MIRA_RESULTS_DB_URL=mysql+pymysql://root:<urlencoded_pw>@<host>:3306/mira_eval?charset=utf8mb4
+```
+
+每次 `mira-eval run` 完成都会把这次 run 的全部数据（meta + goldens + metric results）入库。**DB 写失败不会影响本地 JSON/MD 输出**，是非阻塞的归档动作。
+
+**1. 看历史 run 列表**
+
+```bash
+mira-eval report --list --load-env preview
+# generated_at       env       goldens  pass fail err info   rate  run_uuid
+# 2026-05-19 17:46   preview         1     7    0   0    4  100.0%  b3596fac-...
+```
+
+**2. 从 DB 重建任意一次 run 的报告**
+
+```bash
+mira-eval report --latest --env preview --load-env preview                   # 最新一次
+mira-eval report --run-uuid b3596fac-4620-4fef-975e-60fa3eab70f5 --load-env preview
+```
+
+写出的 .md / .json **跟原 run 当时落地的文件 byte-equal**（只差时间戳）。配合 `mira-eval html` 还能补出样式化 HTML。
+
+**3. 单指标趋势**
+
+```bash
+mira-eval trend --metric GoalAccuracyMetric --env preview --days 30 --load-env preview
+# 按 generated_at 排序的 avg_score + pass rate 表，肉眼能看出 drift
+```
+
+**4. 两次 run 的回归诊断**
+
+```bash
+mira-eval regression --against-prev --env preview --load-env preview
+#   或显式: --a <uuid_a> --b <uuid_b>
+```
+
+输出 5 段诊断：
+
+- 🔻 **REGRESSIONS** — PASS → FAIL（最关注的退步项）
+- 🟢 **IMPROVEMENTS** — FAIL → PASS（修复 / 改进的项）
+- 📉 **SILENT DRIFT** — 都 PASS 但 B 比 A 低 ≥ 0.10（隐性退步，gate 没发现）
+- 📈 **SILENT GAINS** — 都 PASS 但 B 比 A 高 ≥ 0.10
+- Only in A / Only in B（dataset 增减或 scenario 改名时）
+
+**Schema**：`mira_eval` 库 3 张表（`eval_runs` → `eval_goldens` → `eval_metric_results`），首次写入自动建表。DDL 定义在 `mira_eval/persistence/results_db.py` 顶部用 SQLAlchemy Core 写明。
+
 ---
 
 ## 8. 项目结构

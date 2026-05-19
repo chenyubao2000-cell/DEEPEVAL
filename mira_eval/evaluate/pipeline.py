@@ -487,6 +487,20 @@ def run(args: argparse.Namespace) -> int:
     writers.write_json(results, json_path, meta)
     writers.write_markdown(results, md_path, meta)
 
+    # Optional MySQL persistence (env-var gated). Non-fatal: failure here does
+    # NOT roll back local JSON/MD output — DB is a downstream archive, not the
+    # source of truth for the run.
+    db_url = os.environ.get("MIRA_RESULTS_DB_URL")
+    if db_url:
+        try:
+            from ..persistence import results_db
+            engine = results_db.get_engine(db_url)
+            results_db.init_schema(engine)            # idempotent
+            run_uuid = results_db.persist_run(engine, results, meta)
+            print(f"💾 DB persisted    : run_uuid={run_uuid}")
+        except Exception as e:  # noqa: BLE001 — never block the run on DB issues
+            print(f"⚠  DB persist failed (non-fatal): {type(e).__name__}: {e}")
+
     n_pass = sum(1 for gr in results for mr in gr.metric_results if audit.verdict(mr) == "PASS")
     n_fail = sum(1 for gr in results for mr in gr.metric_results if audit.verdict(mr) == "FAIL")
     n_err = sum(1 for gr in results for mr in gr.metric_results if audit.verdict(mr) == "ERROR")

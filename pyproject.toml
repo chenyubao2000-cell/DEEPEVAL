@@ -17,6 +17,11 @@ dependencies = [
     "markdown-it-py==4.2.0",
     "langfuse>=4.6,<5.0",
     "psycopg[binary]>=3.3,<4.0",
+    # Results DB (optional via env var; included by default so a fresh checkout
+    # can immediately enable persistence with `export MIRA_RESULTS_DB_URL=...`)
+    "sqlalchemy>=2.0,<3.0",
+    "pymysql>=1.1,<2.0",
+    "cryptography>=42",   # required by pymysql for MySQL 8 auth
 ]
 
 [project.optional-dependencies]
@@ -33,6 +38,10 @@ mira-eval-compare     = "mira_eval.cli.compare:main"
 mira-eval-html        = "mira_eval.cli.html:main"
 mira-eval-replay      = "mira_eval.cli.replay:main"
 mira-eval-bootstrap   = "mira_eval.cli.bootstrap:main"
+# DB-backed (results DB) commands
+mira-eval-report      = "mira_eval.cli.report:main"
+mira-eval-trend       = "mira_eval.cli.trend:main"
+mira-eval-regression  = "mira_eval.cli.regression:main"
 
 [tool.setuptools.packages.find]
 include = ["mira_eval", "mira_eval.*"]

@@ -6,8 +6,11 @@ Dispatches to one of:
     mira-eval healthcheck [...]    # single golden, every metric
     mira-eval compare [...]        # two JSON reports → side-by-side HTML
     mira-eval html <file.md>       # Markdown → styled HTML
-    mira-eval replay <file.json>   # re-audit historical report
+    mira-eval replay <file.json>   # re-audit historical JSON report
     mira-eval bootstrap [...]      # propose _expected_tools for goldens
+    mira-eval report [...]         # regenerate a report from the results DB
+    mira-eval trend [...]          # cross-run trend for one metric
+    mira-eval regression [...]     # diff two DB runs (PASS↔FAIL flips, drift)
 
 Each subcommand is also exposed as its own console_script (e.g. `mira-eval-run`)
 if you prefer flat invocation.
@@ -24,6 +27,9 @@ _COMMANDS = {
     "html":         "mira_eval.cli.html",
     "replay":       "mira_eval.cli.replay",
     "bootstrap":    "mira_eval.cli.bootstrap",
+    "report":       "mira_eval.cli.report",
+    "trend":        "mira_eval.cli.trend",
+    "regression":   "mira_eval.cli.regression",
 }
 
 
