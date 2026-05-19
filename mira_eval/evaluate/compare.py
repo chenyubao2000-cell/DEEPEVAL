@@ -55,6 +55,12 @@ _VERDICT_PILL = {
     "ERROR": '<span class="pill err">🚨 ERR</span>',
     "NONE":  '<span class="pill none">· NONE</span>',
     "INCONCLUSIVE": '<span class="pill inconclusive">🟡 INC</span>',
+    # v0.2: informational metrics (TokensMetric / SessionCost / TTFT / Duration)
+    # render the same pill style as NONE — they're recorded but never gate.
+    "INFO":  '<span class="pill info">ℹ INFO</span>',
+    # Defensive: when one side is missing the metric (cross-run pair-up),
+    # _verdict() may return empty string. Map to dash so the table cell renders.
+    "":      '<span class="pill none">—</span>',
 }
 
 
@@ -342,8 +348,10 @@ th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
 .pill.err  { color: var(--err);  background: var(--err-bg);  }
 .pill.none { color: var(--none); background: var(--none-bg); }
 .pill.inconclusive { color: #9a6700; background: #fff8c5; }
+.pill.info { color: #0969da; background: #ddf4ff; }
 @media (prefers-color-scheme: dark) {
   .pill.inconclusive { color: #f0c674; background: #3a2f0a; }
+  .pill.info { color: #58a6ff; background: #0d2f4f; }
 }
 
 /* metric description tooltip dot */
