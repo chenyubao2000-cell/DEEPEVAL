@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import html as html_lib
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -621,18 +622,69 @@ def render_html(left: dict, right: dict, left_label: str, right_label: str) -> s
 """
 
 
+def _load_side(file_path: str | None, run_uuid: str | None, db_url: str | None) -> dict:
+    """Load one side of the comparison either from a local JSON file or from
+    a DB run_uuid. Exactly one of (file_path, run_uuid) must be provided per side.
+    """
+    if file_path and run_uuid:
+        raise ValueError("pass either a file path or a run_uuid, not both")
+    if file_path:
+        return _load(Path(file_path))
+    if run_uuid:
+        # Lazy imports — keep compare.py importable without SQLAlchemy when
+        # the user only uses file-path mode.
+        from ..persistence import results_db
+        from ..report.writers import build_payload
+        if not db_url:
+            raise RuntimeError("no DB URL: pass --db-url or set MIRA_RESULTS_DB_URL")
+        engine = results_db.get_engine(db_url)
+        results, meta = results_db.load_run(engine, run_uuid)
+        return build_payload(results, meta)
+    raise ValueError("missing input: pass either a file path or a run_uuid")
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Compare two pipeline JSON results into a side-by-side HTML.")
-    ap.add_argument("--left", required=True, help="path to left-side .json")
-    ap.add_argument("--right", required=True, help="path to right-side .json")
-    ap.add_argument("--left-label", default="left", help="label for left side")
-    ap.add_argument("--right-label", default="right", help="label for right side")
+    ap = argparse.ArgumentParser(
+        description="Compare two pipeline runs into a side-by-side HTML. "
+                    "Each side can come from a local JSON file or directly from the results DB by run_uuid."
+    )
+    # File-path mode (legacy)
+    ap.add_argument("--left", help="path to left-side .json (mutually exclusive with --left-uuid)")
+    ap.add_argument("--right", help="path to right-side .json (mutually exclusive with --right-uuid)")
+    # DB-uuid mode (v0.3+)
+    ap.add_argument("--left-uuid", help="run_uuid for left side (loaded from results DB)")
+    ap.add_argument("--right-uuid", help="run_uuid for right side (loaded from results DB)")
+    ap.add_argument("--db-url", default=None,
+                    help="MySQL URL when using --left-uuid / --right-uuid (default: $MIRA_RESULTS_DB_URL)")
+    ap.add_argument("--load-env", default=None,
+                    help="load .env.<name> first so MIRA_RESULTS_DB_URL can live there")
+    # Common
+    ap.add_argument("--left-label", default=None, help="label for left side (default: short UUID or filename)")
+    ap.add_argument("--right-label", default=None, help="label for right side (default: short UUID or filename)")
     ap.add_argument("-o", "--out", required=True, help="output .html path")
     args = ap.parse_args()
 
-    left = _load(Path(args.left))
-    right = _load(Path(args.right))
-    html_out = render_html(left, right, args.left_label, args.right_label)
+    # Validation: each side needs exactly one source.
+    if bool(args.left) == bool(args.left_uuid):
+        ap.error("specify exactly one of --left or --left-uuid")
+    if bool(args.right) == bool(args.right_uuid):
+        ap.error("specify exactly one of --right or --right-uuid")
+
+    # Optional: load .env so DB URL can live there
+    if args.load_env:
+        from ..config import load_env
+        load_env(args.load_env)
+
+    db_url = args.db_url or os.environ.get("MIRA_RESULTS_DB_URL")
+
+    left = _load_side(args.left, args.left_uuid, db_url)
+    right = _load_side(args.right, args.right_uuid, db_url)
+
+    # Default labels: short UUID prefix or filename stem
+    left_label = args.left_label or (args.left_uuid[:8] if args.left_uuid else Path(args.left).stem)
+    right_label = args.right_label or (args.right_uuid[:8] if args.right_uuid else Path(args.right).stem)
+
+    html_out = render_html(left, right, left_label, right_label)
     Path(args.out).write_text(html_out, encoding="utf-8")
     print(f"✓ wrote {args.out}  ({Path(args.out).stat().st_size/1024:.1f} KB)")
 

@@ -199,8 +199,15 @@ def _aggregate_category(results: list["GoldenResult"]) -> list[dict]:
 # JSON writer
 # ─────────────────────────────────────────────────────────────────────────────
 
-def write_json(results: list["GoldenResult"], out_path: Path, meta: dict) -> None:
-    payload = {
+def build_payload(results: list["GoldenResult"], meta: dict) -> dict:
+    """Build the JSON-serialisable payload that `write_json` writes to disk.
+
+    Extracted so callers that need the same dict shape WITHOUT a file round-trip
+    (e.g. ``mira-eval-compare --left-uuid …`` pulling two runs from MySQL and
+    handing them to ``compare.render_html`` directly) can reuse the schema
+    without re-implementing it.
+    """
+    return {
         "meta": meta,
         "results": [
             {
@@ -248,6 +255,10 @@ def write_json(results: list["GoldenResult"], out_path: Path, meta: dict) -> Non
             for gr in results
         ],
     }
+
+
+def write_json(results: list["GoldenResult"], out_path: Path, meta: dict) -> None:
+    payload = build_payload(results, meta)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
