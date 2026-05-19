@@ -7,3 +7,5 @@ __pycache__/
 reports/
 *.egg-info/
 .DS_Store
+healthcheck-report.json
+healthcheck-report.md
