@@ -38,6 +38,7 @@ ACTIVE_METRICS: frozenset[str] = frozenset({
     "SessionCostMetric",
     "TimeToFirstTokenMetric",
     "SessionDurationMetric",
+    "NTurnsMetric",
     # Multi-turn quality (deepeval built-ins)
     "GoalAccuracyMetric",
     "RoleAdherenceMetric",
