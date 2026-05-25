@@ -91,6 +91,8 @@ AUTO_CONFIRM_TOOLS: set[str] = {
     "confirm",                       # built-in confirm-tool.ts → "Yes, confirmed."
     "bua_confirm_sensitive_action",  # BUA destructive-action gate → same string
     "clarify_question",              # built-in clarify-question.ts → {field:default}
+    "infer_icp",                     # Mira's ICP-inference gate (asks "搜寻?" after
+                                     # building candidate profile) → same yes-string
 }
 
 
